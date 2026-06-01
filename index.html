@@ -2186,7 +2186,7 @@ let swRegistration = null;
 function initPWA() {
   // ── Register service worker ──
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js', { scope: '/han-taekwondo-dojang/' })
+    navigator.serviceWorker.register('./sw.js', { scope: './' })
       .then(reg => {
         swRegistration = reg;
         console.log('[PWA] Service worker registered:', reg.scope);
@@ -2307,7 +2307,7 @@ function sendLocalNotification(title, body, url) {
     icon: LOGO_URI,
     badge: LOGO_URI,
     vibrate: [200, 100, 200],
-    data: { url: url || '/han-taekwondo-dojang/' },
+    data: { url: url || './' },
     tag: 'han-tkd-' + Date.now(),
   });
 }
@@ -2323,7 +2323,7 @@ function triggerSmartNotifications() {
       sendLocalNotification(
         'Fee Reminder — ' + s.name,
         s.name + ' has an outstanding fee for ' + mLabel() + '. RWF ' + (fees[s.plan]||0).toLocaleString(),
-        '/han-taekwondo-dojang/?view=payments'
+        './?view=payments'
       );
     }
   });
@@ -3243,7 +3243,7 @@ setTimeout(requestNotificationPermission, 10000);
 <script id="final-sync-scroll-script">
 (function(){
   var SYNC_KEYS={students:'ht_st',sessions:'ht_s',instructors:'ht_i',attendance:'ht_a',instrAtt:'ht_ia',payments:'ht_p',parents:'ht_parents',wallet:'ht_wallet',products:'ht_products',orders:'ht_orders',events:'ht_events',absences:'ht_absences'};
-  function getCfg(){return {url:localStorage.getItem('ht_sync_url')||'',key:localStorage.getItem('ht_sync_key')||''};}
+  function getCfg(){return {url:localStorage.getItem('ht_sync_url')||'https://script.google.com/macros/s/AKfycby4n_pA2G-yLKQcls5qW9fIcGqXTiX_F6OQG1WpPn5v7IJe0rTe64eBc6Yipj_5sDBxNg/exec',key:localStorage.getItem('ht_sync_key')||'HanTKD2026Secure'};}
   function setCfg(url,key){localStorage.setItem('ht_sync_url',url||'');localStorage.setItem('ht_sync_key',key||'');}
   function notify(msg,type){try{showToast(msg,type||'')}catch(e){console.log(msg)}}
   function apiReady(){var c=getCfg();return c.url.indexOf('https://script.google.com/')===0 && c.key.length>3;}
@@ -3303,6 +3303,38 @@ setTimeout(requestNotificationPermission, 10000);
   ['DOMContentLoaded','load','resize','orientationchange'].forEach(function(ev){window.addEventListener(ev,function(){rewireAppSync();injectSyncSettings();forceMobileScroll();}, {passive:true});});
   setTimeout(function(){rewireAppSync();injectSyncSettings();forceMobileScroll();syncFromCloud(true);},800);
   setInterval(function(){ if(apiReady()) syncFromCloud(true); },30000);
+})();
+</script>
+
+
+<style id="repo-ready-scroll-override">
+  html, body { height:auto !important; min-height:100% !important; overflow-y:auto !important; overflow-x:hidden !important; position:static !important; }
+  body { touch-action:pan-y !important; -webkit-overflow-scrolling:touch !important; }
+  .app, .main-wrap, .content, .page, .page.active, .portal-outer, .portal-phone, #portal-phone, .portal-body, .auth-overlay, .auth-box {
+    height:auto !important; max-height:none !important; overflow-y:visible !important; overflow-x:hidden !important; position:relative;
+  }
+  .content, .page.active, .portal-body { padding-bottom:140px !important; }
+  @media(max-width:900px){
+    .main-wrap{ margin-left:0 !important; width:100% !important; min-height:100svh !important; }
+    .content{ min-height:auto !important; height:auto !important; overflow:visible !important; }
+    .portal-phone{ width:100% !important; max-width:none !important; min-height:auto !important; border-radius:0 !important; }
+  }
+</style>
+<script>
+(function(){
+  function unlockScroll(){
+    document.documentElement.style.overflowY='auto';
+    document.body.style.overflowY='auto';
+    document.body.style.height='auto';
+    document.body.style.position='static';
+    document.querySelectorAll('.main-wrap,.content,.page,.page.active,.portal-outer,.portal-phone,#portal-phone,.portal-body,.auth-overlay,.auth-box').forEach(function(el){
+      el.style.height='auto'; el.style.maxHeight='none'; el.style.overflowY='visible'; el.style.webkitOverflowScrolling='touch';
+    });
+  }
+  window.addEventListener('load',unlockScroll,{passive:true});
+  window.addEventListener('resize',unlockScroll,{passive:true});
+  window.addEventListener('orientationchange',unlockScroll,{passive:true});
+  setInterval(unlockScroll,2000);
 })();
 </script>
 

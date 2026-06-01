@@ -116,10 +116,10 @@ self.addEventListener('push', event => {
 
   const options = {
     body:    data.body  || 'You have a new notification',
-    icon:    '/han-taekwondo-dojang/icons/icon-192.png',
-    badge:   '/han-taekwondo-dojang/icons/icon-72.png',
+    icon:    './icons/icon-192.png',
+    badge:   './icons/icon-72.png',
     vibrate: [200, 100, 200],
-    data:    { url: data.url || '/han-taekwondo-dojang/' },
+    data:    { url: data.url || './' },
     actions: data.actions || [],
     tag:     data.tag || 'han-tkd-notif',
     renotify: true,
@@ -133,12 +133,12 @@ self.addEventListener('push', event => {
 // ── NOTIFICATION CLICK ────────────────────────────────────────
 self.addEventListener('notificationclick', event => {
   event.notification.close();
-  const targetUrl = event.notification.data?.url || '/han-taekwondo-dojang/';
+  const targetUrl = event.notification.data?.url || './';
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windowClients => {
       // Focus existing window if open
       for (const client of windowClients) {
-        if (client.url.includes('han-taekwondo-dojang') && 'focus' in client) {
+        if (client.url.includes('htk-dojang') && 'focus' in client) {
           return client.focus();
         }
       }

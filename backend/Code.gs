@@ -4,8 +4,8 @@
 // Deploy as: Web App → Execute as Me → Anyone can access
 // ═══════════════════════════════════════════════════════════════
 
-const SPREADSHEET_ID = 'YOUR_SPREADSHEET_ID_HERE'; // ← replace after creating sheet
-const API_KEY        = 'YOUR_API_KEY_HERE';          // ← set a strong secret key, e.g. 'htk-2026-rw-x9f2'
+const SPREADSHEET_ID = '1fqJnYBRdNw7HXPkJJcJSg9JXFdQuTkxtBA3CTe-VsdU'; // ← replace after creating sheet
+const API_KEY        = 'HanTKD2026Secure';          // ← set a strong secret key, e.g. 'htk-2026-rw-x9f2'
 
 const SHEETS = {
   students:    'Students',

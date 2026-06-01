@@ -1,0 +1,21 @@
+HTK Dojang repo upload package
+
+Upload the CONTENTS of this folder to GitHub repo: Naphymoro/htk-dojang
+Do not upload this ZIP file itself.
+
+Important files at repo root:
+- index.html
+- manifest.json
+- sw.js
+- icons/ folder
+- backend/ folder
+
+Cloud sync is already configured in this build:
+Apps Script URL: https://script.google.com/macros/s/AKfycby4n_pA2G-yLKQcls5qW9fIcGqXTiX_F6OQG1WpPn5v7IJe0rTe64eBc6Yipj_5sDBxNg/exec
+API key: HanTKD2026Secure
+Google Sheet ID: 1fqJnYBRdNw7HXPkJJcJSg9JXFdQuTkxtBA3CTe-VsdU
+
+After uploading, open:
+https://naphymoro.github.io/htk-dojang/
+
+Then hard refresh or clear site data if the old app still appears.

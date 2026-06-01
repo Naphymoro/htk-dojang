@@ -7,11 +7,11 @@
 // ═══════════════════════════════════════════════════════════════
 
 // ── CONFIG — paste your Apps Script Web App URL here ─────────
-const API_URL = 'YOUR_APPS_SCRIPT_WEB_APP_URL_HERE';
+const API_URL = 'https://script.google.com/macros/s/AKfycby4n_pA2G-yLKQcls5qW9fIcGqXTiX_F6OQG1WpPn5v7IJe0rTe64eBc6Yipj_5sDBxNg/exec';
 // Example:
 // const API_URL = 'https://script.google.com/macros/s/AKfycby.../exec';
 
-const API_KEY = 'YOUR_API_KEY_HERE'; // ← must match Code.gs API_KEY exactly
+const API_KEY = 'HanTKD2026Secure'; // ← must match Code.gs API_KEY exactly
 
 // ── LOW-LEVEL FETCH HELPERS ───────────────────────────────────
 async function apiGet(params) {
