@@ -2,8 +2,8 @@
   "name": "Han Taekwondo Korea",
   "short_name": "Han TKD",
   "description": "Han Taekwondo Korea Digital Dojang — student management, schedules, attendance and parent portal.",
-  "start_url": "/han-taekwondo-dojang/",
-  "scope": "/han-taekwondo-dojang/",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "orientation": "portrait-primary",
   "theme_color": "#FF1E3C",
@@ -74,21 +74,21 @@
       "name": "Mark Attendance",
       "short_name": "Attendance",
       "description": "Quickly mark student attendance",
-      "url": "/han-taekwondo-dojang/?view=attendance",
+      "url": "./?view=attendance",
       "icons": [{ "src": "icons/icon-96.png", "sizes": "96x96" }]
     },
     {
       "name": "Schedule",
       "short_name": "Schedule",
       "description": "View weekly class schedule",
-      "url": "/han-taekwondo-dojang/?view=schedule",
+      "url": "./?view=schedule",
       "icons": [{ "src": "icons/icon-96.png", "sizes": "96x96" }]
     },
     {
       "name": "Parent Portal",
       "short_name": "Portal",
       "description": "View your child's progress",
-      "url": "/han-taekwondo-dojang/?view=parent",
+      "url": "./?view=parent",
       "icons": [{ "src": "icons/icon-96.png", "sizes": "96x96" }]
     }
   ]

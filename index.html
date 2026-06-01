@@ -506,7 +506,7 @@ select.form-input option{background:var(--card);color:var(--fg)}
 .admin-only{display:none}
 .instructor-only{display:none}
 .parent-only{display:none}
-body/* ── ROLE VISIBILITY ─────────────────────────────── */
+/* ── ROLE VISIBILITY ─────────────────────────────── */
 .admin-only,.instructor-only,.parent-only,.kiosk-only{display:none}
 body[data-role="admin"]      .admin-only     {display:revert}
 body[data-role="admin"]      .hide-admin     {display:none!important}
@@ -668,6 +668,19 @@ body {
   .content { overflow-y: visible !important; }
   .portal-phone { width: 100% !important; border-radius: 0 !important; box-shadow: none !important; }
 }
+
+
+
+/* FINAL AUDIT FIX: document-level vertical scrolling and mobile-safe app shell */
+html,body{height:auto!important;min-height:100%!important;overflow-y:auto!important;overflow-x:hidden!important;}
+body{display:block!important;position:static!important;touch-action:auto!important;}
+.main-wrap{height:auto!important;min-height:100dvh!important;overflow:visible!important;}
+.content{height:auto!important;max-height:none!important;min-height:calc(100dvh - var(--hh))!important;overflow:visible!important;-webkit-overflow-scrolling:touch!important;}
+.page,.page.active{height:auto!important;max-height:none!important;overflow:visible!important;}
+.auth-overlay{overflow-y:auto!important;align-items:flex-start!important;justify-content:center!important;-webkit-overflow-scrolling:touch!important;}
+.auth-box{max-height:none!important;overflow:visible!important;margin:20px 0!important;}
+.parent-child-results.show{display:flex!important;flex-direction:column!important;gap:6px!important;max-height:none!important;overflow:visible!important;}
+@media(max-width:900px){.main-wrap{margin-left:0!important;width:100%!important}.content{padding-bottom:120px!important}.topbar{position:sticky!important;top:0!important}}
 
 </style>
 </head>
@@ -3025,5 +3038,150 @@ setTimeout(requestNotificationPermission, 10000);
   window.switchView = function(v){ var r = oldSwitchView ? oldSwitchView(v) : undefined; setTimeout(unlockVerticalScroll, 0); return r; };
 })();
 </script>
+
+<script>
+/* FINAL AUDIT EXECUTION PATCH: canonical student search + one-page vertical scroll */
+(function(){
+  window.HAN_AUDIT_EXECUTED = 'student-search-scroll-v5';
+
+  function safeJSON(v,d){ try { return v ? JSON.parse(v) : d; } catch(e){ return d; } }
+  function put(k,v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} }
+  function looksLikeStudent(x){
+    return x && typeof x === 'object' && typeof x.name === 'string' && x.name.trim().length > 0 &&
+      ('age' in x || 'belt' in x || 'plan' in x || 'parentPin' in x || 'parentId' in x || 'sessions' in x || 'sessionIds' in x);
+  }
+  function defaultStudents(){ try { return typeof defSt === 'function' ? defSt() : []; } catch(e){ return []; } }
+  function collectAllStudents(){
+    var all=[];
+    function addList(list){
+      if(!Array.isArray(list)) return;
+      list.forEach(function(x){ if(looksLikeStudent(x)) all.push(Object.assign({}, x)); });
+    }
+    addList(safeJSON(localStorage.getItem('ht_st'), []));
+    addList(safeJSON(localStorage.getItem('ht_students'), []));
+    addList(safeJSON(localStorage.getItem('students'), []));
+    addList(safeJSON(localStorage.getItem('han_students'), []));
+    addList(safeJSON(localStorage.getItem('dojang_students'), []));
+    for(var i=0;i<localStorage.length;i++){
+      var key = localStorage.key(i);
+      var val = safeJSON(localStorage.getItem(key), null);
+      if(Array.isArray(val) && val.some(looksLikeStudent)) addList(val);
+    }
+    addList(defaultStudents());
+    var seen={}, out=[];
+    all.forEach(function(st){
+      var name = String(st.name||'').trim(); if(!name) return;
+      var id = st.id || ('st_'+name.toLowerCase().replace(/[^a-z0-9]+/g,'_'));
+      var sig = id + '|' + name.toLowerCase();
+      if(seen[sig]) return;
+      seen[sig]=1;
+      st.id = id;
+      if(!st.parentPin) st.parentPin = '0000';
+      out.push(st);
+    });
+    return out;
+  }
+  function canonicalStudents(){
+    var list = collectAllStudents();
+    put('ht_st', list);
+    put('ht_students_backup', list);
+    return list;
+  }
+  if(window.APP){
+    try{
+      Object.defineProperty(APP, 'students', {
+        configurable:true,
+        get:function(){ return canonicalStudents(); },
+        set:function(v){ put('ht_st', Array.isArray(v) ? v : []); put('ht_students_backup', Array.isArray(v) ? v : []); }
+      });
+    }catch(e){}
+  }
+
+  function norm(v){
+    return String(v||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim();
+  }
+  function compact(v){ return norm(v).replace(/\s+/g,''); }
+  function studentHaystack(st){
+    var name = norm(st && st.name), c = compact(st && st.name), bits=[name,c];
+    name.split(/\s+/).filter(Boolean).forEach(function(p){ bits.push(p); });
+    return bits.join(' | ');
+  }
+  function sessionText(st){
+    try { if(typeof childSessionLine === 'function') return childSessionLine(st); } catch(e){}
+    return (st.sessions||st.sessionIds||[]).join(', ') || 'No session assigned';
+  }
+  function meta(st){
+    var a=[]; if(st.age) a.push('Age '+st.age); if(st.belt) a.push(st.belt); a.push(sessionText(st)); return a.filter(Boolean).join(' • ');
+  }
+
+  window.renderParentChildSearch = function(){
+    var input=document.getElementById('auth-child-search'), results=document.getElementById('auth-child-results'), sel=document.getElementById('auth-student-sel'), selected=document.getElementById('auth-child-selected'), err=document.getElementById('parent-pin-error');
+    if(!input || !results || !sel) return;
+    var q=norm(input.value), qc=compact(input.value), students=canonicalStudents();
+    sel.value=''; if(err) err.textContent=''; if(selected){ selected.textContent=''; selected.classList.remove('show'); }
+    results.classList.add('show');
+    if(q.length<3 && qc.length<3){
+      results.innerHTML='<div style="font-size:12px;color:var(--muted);padding:8px">Type any 3 letters from your child’s first, middle, or surname. '+students.length+' registered students available.</div>';
+      unlockPageScroll(); return;
+    }
+    var matches=students.filter(function(st){ var h=studentHaystack(st); return h.indexOf(q)>=0 || h.indexOf(qc)>=0; });
+    var shown=matches.slice(0,80);
+    results.innerHTML = shown.length ?
+      '<div style="font-size:11px;color:var(--dim);padding:2px 4px">'+matches.length+' match'+(matches.length===1?'':'es')+' from '+students.length+' registered students</div>' +
+      shown.map(function(st){ return '<button type="button" class="parent-child-option" onclick="selectParentLoginChild(\''+String(st.id).replace(/'/g,'&#39;')+'\')">'+st.name+'<small>'+meta(st)+'</small></button>'; }).join('') :
+      '<div style="font-size:12px;color:var(--muted);padding:8px">No matching child found. Check spelling or contact the dojo.</div>';
+    unlockPageScroll();
+  };
+  window.selectParentLoginChild=function(id){
+    var st=canonicalStudents().find(function(x){ return String(x.id)===String(id); });
+    var sel=document.getElementById('auth-student-sel'), input=document.getElementById('auth-child-search'), results=document.getElementById('auth-child-results'), selected=document.getElementById('auth-child-selected'), pin=document.getElementById('parent-pin-inp');
+    if(!st || !sel) return;
+    sel.innerHTML='<option value="'+st.id+'">'+st.name+'</option>'; sel.value=st.id; sel.style.display='none';
+    if(input) input.value=st.name;
+    if(results){ results.innerHTML=''; results.classList.remove('show'); }
+    if(selected){ selected.textContent='Selected: '+st.name+' • '+meta(st); selected.classList.add('show'); }
+    if(pin) pin.focus(); unlockPageScroll();
+  };
+
+  window.unlockPageScroll=function(){
+    var html=document.documentElement, body=document.body, mw=document.querySelector('.main-wrap'), content=document.querySelector('.content');
+    [html,body,mw,content].forEach(function(el){ if(!el) return; el.style.height='auto'; el.style.maxHeight='none'; el.style.overflowY='visible'; el.style.overflowX='hidden'; el.style.webkitOverflowScrolling='touch'; });
+    html.style.overflowY='auto'; body.style.overflowY='auto'; body.style.display='block'; body.style.position='static';
+    if(mw){ mw.style.minHeight='100dvh'; mw.style.overflow='visible'; }
+    if(content){ content.style.minHeight='calc(100dvh - var(--hh))'; content.style.overflow='visible'; }
+    document.querySelectorAll('.page,.page.active').forEach(function(p){ p.style.height='auto'; p.style.maxHeight='none'; p.style.overflow='visible'; });
+    var auth=document.querySelector('.auth-overlay'), box=document.querySelector('.auth-box');
+    if(auth){ auth.style.overflowY='auto'; auth.style.alignItems='flex-start'; }
+    if(box){ box.style.maxHeight='none'; box.style.overflow='visible'; }
+  };
+  ['DOMContentLoaded','load','resize','orientationchange'].forEach(function(ev){ window.addEventListener(ev, unlockPageScroll, {passive:true}); });
+  document.addEventListener('input', function(e){ if(e && e.target && e.target.id==='auth-child-search') window.renderParentChildSearch(); }, true);
+  var oldSelect=window.selectAuthRole;
+  window.selectAuthRole=function(role){
+    if(oldSelect) oldSelect(role);
+    if(role==='parent') setTimeout(function(){
+      var sel=document.getElementById('auth-student-sel'), input=document.getElementById('auth-child-search'), results=document.getElementById('auth-child-results'), pin=document.getElementById('parent-pin-inp');
+      if(sel){ sel.innerHTML='<option value=""></option>'; sel.value=''; sel.style.display='none'; }
+      if(input){ input.value=''; input.focus(); }
+      if(pin) pin.value='';
+      if(results){ results.classList.add('show'); results.innerHTML='<div style="font-size:12px;color:var(--muted);padding:8px">Type any 3 letters from your child’s name. '+canonicalStudents().length+' registered students available.</div>'; }
+      unlockPageScroll();
+    },80);
+  };
+  var oldSwitch=window.switchView;
+  window.switchView=function(v){ var r=oldSwitch?oldSwitch(v):undefined; setTimeout(unlockPageScroll,0); return r; };
+  window.confirmParentLogin=function(){
+    var sel=document.getElementById('auth-student-sel'), pinEl=document.getElementById('parent-pin-inp'), err=document.getElementById('parent-pin-error');
+    if(!sel || !sel.value){ if(err) err.textContent='Search and select your child first'; showToast('Search and select your child first','err'); return; }
+    var st=canonicalStudents().find(function(x){ return String(x.id)===String(sel.value); });
+    if(!st){ if(err) err.textContent='Selected child is not in the student register'; return; }
+    var entered=pinEl ? pinEl.value.trim() : '';
+    if(entered !== (st.parentPin || '0000')){ if(err) err.textContent='Incorrect PIN — use last 4 digits of your registered phone'; if(pinEl){ pinEl.value=''; pinEl.focus(); } return; }
+    if(err) err.textContent=''; parentStudentId=st.id; hideAuthScreen(); applyRole('parent'); showToast('Welcome, '+st.name+String.fromCharCode(39)+'s parent');
+  };
+  setTimeout(unlockPageScroll,50); setTimeout(unlockPageScroll,500); setTimeout(unlockPageScroll,1500);
+})();
+</script>
+
 </body>
 </html>

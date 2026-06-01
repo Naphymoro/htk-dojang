@@ -4,14 +4,14 @@
 // Version: bump CACHE_VERSION to force update on all devices
 // ═══════════════════════════════════════════════════════════════
 
-const CACHE_VERSION  = 'han-tkd-v4-scroll-back-child-search';
+const CACHE_VERSION  = 'han-tkd-v5-audit-scroll-search';
 const STATIC_CACHE   = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE  = `${CACHE_VERSION}-dynamic`;
 
 // Files to cache immediately on install (app shell)
 const STATIC_ASSETS = [
-  '/han-taekwondo-dojang/',
-  '/han-taekwondo-dojang/index.html',
+  './',
+  './index.html',
   'https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap',
 ];
 
@@ -84,7 +84,7 @@ self.addEventListener('fetch', event => {
         .catch(() => {
           // Offline fallback for navigation requests
           if (request.mode === 'navigate') {
-            return caches.match('/han-taekwondo-dojang/index.html');
+            return caches.match('./index.html').then(r => r || caches.match('./'));
           }
           return new Response('Offline', { status: 503 });
         });
