@@ -635,6 +635,40 @@ body{overflow-x:hidden!important;display:block!important;}
   .topbar{position:sticky;top:0;}
 }
 
+
+/* FORCE MOBILE/TABLET VERTICAL SCROLL REPAIR */
+html, body {
+  height: auto !important;
+  min-height: 100% !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  touch-action: pan-y !important;
+}
+body {
+  display: block !important;
+  position: static !important;
+  -webkit-overflow-scrolling: touch !important;
+}
+.main-wrap, .content, .page, .auth-overlay, .auth-box, #portal-phone, .portal-phone {
+  height: auto !important;
+  max-height: none !important;
+  overflow-y: visible !important;
+  -webkit-overflow-scrolling: touch !important;
+}
+.content {
+  min-height: calc(100dvh - 64px) !important;
+  padding-bottom: 140px !important;
+}
+.auth-overlay {
+  align-items: flex-start !important;
+  overflow-y: auto !important;
+}
+@media (max-width: 900px) {
+  .main-wrap { margin-left: 0 !important; width: 100% !important; }
+  .content { overflow-y: visible !important; }
+  .portal-phone { width: 100% !important; border-radius: 0 !important; box-shadow: none !important; }
+}
+
 </style>
 </head>
 <body>
@@ -2874,6 +2908,122 @@ setTimeout(requestNotificationPermission, 10000);
   };
 })();
 
+</script>
+
+
+<script>
+/* FINAL REPAIR PATCH: true vertical scroll + robust parent child search */
+(function(){
+  window.HAN_FINAL_REPAIR_PATCH = 'scroll-search-v3-verified';
+
+  function unlockVerticalScroll(){
+    var els = [document.documentElement, document.body, document.querySelector('.main-wrap'), document.querySelector('.content'), document.querySelector('.page.active'), document.querySelector('.auth-overlay'), document.querySelector('.auth-box')];
+    els.forEach(function(el){
+      if(!el) return;
+      el.style.height = 'auto';
+      el.style.maxHeight = 'none';
+      el.style.overflowY = (el.classList && (el.classList.contains('auth-overlay') || el.classList.contains('content'))) ? 'auto' : 'visible';
+      el.style.overflowX = 'hidden';
+      el.style.webkitOverflowScrolling = 'touch';
+    });
+    document.documentElement.style.overflowY = 'auto';
+    document.body.style.overflowY = 'auto';
+    document.body.style.display = 'block';
+    document.body.style.position = 'static';
+  }
+  window.unlockVerticalScroll = unlockVerticalScroll;
+  unlockVerticalScroll();
+  ['DOMContentLoaded','load','resize','orientationchange'].forEach(function(ev){ window.addEventListener(ev, unlockVerticalScroll, {passive:true}); });
+  setTimeout(unlockVerticalScroll, 250);
+  setTimeout(unlockVerticalScroll, 1000);
+
+  function norm(v){
+    return String(v||'')
+      .toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+      .replace(/[^a-z0-9]+/g,' ')
+      .trim();
+  }
+  function compact(v){ return norm(v).replace(/\s+/g,''); }
+  function tokens(st){
+    var name = norm(st && st.name);
+    var parts = name.split(/\s+/).filter(Boolean);
+    return [name, compact(name)].concat(parts).concat(parts.map(function(x){return x.slice(0,3);}));
+  }
+  function meta(st){
+    var out=[];
+    if(st.age) out.push('Age '+st.age);
+    if(st.belt) out.push(st.belt);
+    try { if(typeof childSessionLine === 'function') out.push(childSessionLine(st)); } catch(e){}
+    return out.filter(Boolean).join(' • ');
+  }
+  window.renderParentChildSearch = function(){
+    var input = document.getElementById('auth-child-search');
+    var results = document.getElementById('auth-child-results');
+    var selected = document.getElementById('auth-child-selected');
+    var sel = document.getElementById('auth-student-sel');
+    var err = document.getElementById('parent-pin-error');
+    if(!input || !results || !sel) return;
+    var raw = input.value || '';
+    var q = norm(raw);
+    var qc = compact(raw);
+    sel.value = '';
+    if(err) err.textContent = '';
+    if(selected){ selected.textContent=''; selected.classList.remove('show'); }
+    if(q.length < 3 && qc.length < 3){
+      results.classList.add('show');
+      results.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:6px">Type at least 3 letters from the child name, for example: Ann, Jo, or Han.</div>';
+      unlockVerticalScroll();
+      return;
+    }
+    var students = Array.isArray(APP && APP.students) ? APP.students : [];
+    var matches = students.filter(function(st){
+      var ts = tokens(st);
+      return ts.some(function(t){ return t.indexOf(q) !== -1 || t.indexOf(qc) !== -1; });
+    }).slice(0, 20);
+    results.classList.add('show');
+    results.innerHTML = matches.length ? matches.map(function(st){
+      return '<button type="button" class="parent-child-option" onclick="selectParentLoginChild(\''+st.id+'\')">'+
+        st.name+'<small>'+meta(st)+'</small></button>';
+    }).join('') : '<div style="font-size:12px;color:var(--muted);padding:6px">No child found. Try any 3 letters from the first name, middle name, or surname.</div>';
+    unlockVerticalScroll();
+  };
+  window.selectParentLoginChild = function(id){
+    var st = ((APP && APP.students) || []).find(function(x){ return x.id === id; });
+    var sel = document.getElementById('auth-student-sel');
+    var input = document.getElementById('auth-child-search');
+    var results = document.getElementById('auth-child-results');
+    var selected = document.getElementById('auth-child-selected');
+    if(!st || !sel) return;
+    if(!Array.prototype.some.call(sel.options, function(o){ return o.value === id; })){
+      sel.insertAdjacentHTML('beforeend','<option value="'+id+'">'+st.name+'</option>');
+    }
+    sel.value = id;
+    if(input) input.value = st.name;
+    if(results){ results.classList.remove('show'); results.innerHTML=''; }
+    if(selected){ selected.textContent = 'Selected: '+st.name+' • '+meta(st); selected.classList.add('show'); }
+    var pin = document.getElementById('parent-pin-inp');
+    if(pin) pin.focus();
+    unlockVerticalScroll();
+  };
+  var oldSelectAuthRole = window.selectAuthRole;
+  window.selectAuthRole = function(role){
+    if(oldSelectAuthRole) oldSelectAuthRole(role);
+    if(role === 'parent'){
+      setTimeout(function(){
+        var input = document.getElementById('auth-child-search');
+        var results = document.getElementById('auth-child-results');
+        var sel = document.getElementById('auth-student-sel');
+        if(sel){ sel.innerHTML = '<option value="">Select your child…</option>'; sel.style.display='none'; }
+        if(input){ input.value=''; input.focus(); }
+        if(results){ results.classList.add('show'); results.innerHTML='<div style="font-size:12px;color:var(--muted);padding:6px">Type at least 3 letters from your child name.</div>'; }
+        unlockVerticalScroll();
+      }, 60);
+    }
+  };
+  var oldSwitchView = window.switchView;
+  window.switchView = function(v){ var r = oldSwitchView ? oldSwitchView(v) : undefined; setTimeout(unlockVerticalScroll, 0); return r; };
+})();
 </script>
 </body>
 </html>
