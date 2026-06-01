@@ -3183,5 +3183,128 @@ setTimeout(requestNotificationPermission, 10000);
 })();
 </script>
 
+
+<!-- FINAL DEVICE-SYNC + MOBILE SCROLL AUDIT PATCH -->
+<style id="final-sync-scroll-style">
+  /* Make the app use one reliable vertical scroll surface on phones/tablets. */
+  html, body {
+    width:100% !important;
+    min-width:0 !important;
+    height:100% !important;
+    min-height:100% !important;
+    margin:0 !important;
+    overflow-x:hidden !important;
+    overscroll-behavior-y:auto !important;
+    -webkit-overflow-scrolling:touch !important;
+    touch-action:pan-y !important;
+  }
+  body {
+    position:static !important;
+    display:block !important;
+  }
+  .main-wrap {
+    width:calc(100% - var(--sw)) !important;
+    min-height:100svh !important;
+    height:auto !important;
+    max-height:none !important;
+    overflow:visible !important;
+  }
+  .content {
+    width:100% !important;
+    min-height:calc(100svh - var(--hh)) !important;
+    height:auto !important;
+    max-height:none !important;
+    overflow:visible !important;
+    overflow-x:hidden !important;
+    -webkit-overflow-scrolling:touch !important;
+    touch-action:pan-y !important;
+  }
+  .page, .page.active, .portal-outer, .portal-phone, #portal-phone, .portal-body {
+    height:auto !important;
+    max-height:none !important;
+    overflow:visible !important;
+  }
+  .page.active { padding-bottom:112px !important; }
+  .portal-outer.full-page { display:block !important; width:100% !important; padding:0 0 120px !important; }
+  .portal-outer.full-page .portal-phone { width:100% !important; max-width:none !important; border-radius:0 !important; box-shadow:none !important; }
+  .auth-overlay { overflow-y:auto !important; align-items:flex-start !important; -webkit-overflow-scrolling:touch !important; }
+  .auth-box { max-height:none !important; overflow:visible !important; margin:20px 0 40px !important; }
+  @media(max-width:768px){
+    .main-wrap{margin-left:0 !important;width:100% !important;}
+    .content{padding-bottom:128px !important;}
+    .tbl-wrap{overflow-x:auto !important; overflow-y:visible !important;}
+    .portal-body{padding-bottom:130px !important;}
+  }
+  .sync-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r2);padding:14px;margin-bottom:14px;display:grid;gap:10px}
+  .sync-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.sync-row.single{grid-template-columns:1fr}
+  .sync-status{font-size:12px;color:var(--muted);line-height:1.45}
+  @media(max-width:640px){.sync-row{grid-template-columns:1fr}}
+</style>
+<script id="final-sync-scroll-script">
+(function(){
+  var SYNC_KEYS={students:'ht_st',sessions:'ht_s',instructors:'ht_i',attendance:'ht_a',instrAtt:'ht_ia',payments:'ht_p',parents:'ht_parents',wallet:'ht_wallet',products:'ht_products',orders:'ht_orders',events:'ht_events',absences:'ht_absences'};
+  function getCfg(){return {url:localStorage.getItem('ht_sync_url')||'',key:localStorage.getItem('ht_sync_key')||''};}
+  function setCfg(url,key){localStorage.setItem('ht_sync_url',url||'');localStorage.setItem('ht_sync_key',key||'');}
+  function notify(msg,type){try{showToast(msg,type||'')}catch(e){console.log(msg)}}
+  function apiReady(){var c=getCfg();return c.url.indexOf('https://script.google.com/')===0 && c.key.length>3;}
+  async function apiGet(params){var c=getCfg();var u=c.url+'?'+new URLSearchParams(Object.assign({},params,{key:c.key})).toString();var r=await fetch(u,{cache:'no-store'});return r.json();}
+  async function apiPost(body){var c=getCfg();var r=await fetch(c.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(Object.assign({},body,{key:c.key}))});return r.json();}
+  window.syncFromCloud=async function(silent){
+    if(!apiReady()){ if(!silent) notify('Cloud sync is not configured yet','err'); return false; }
+    try{
+      var result=await apiGet({action:'readAll',t:Date.now()});
+      if(!result.ok) throw new Error(result.error||'Cloud read failed');
+      var data=result.data||{};
+      Object.keys(SYNC_KEYS).forEach(function(k){ if(Array.isArray(data[k])) localStorage.setItem(SYNC_KEYS[k], JSON.stringify(data[k])); });
+      localStorage.setItem('ht_last_sync', new Date().toISOString());
+      try{ renderAllViews(); }catch(e){}
+      if(!silent) notify('Synced from cloud');
+      return true;
+    }catch(err){ if(!silent) notify('Cloud sync failed: '+err.message,'err'); return false; }
+  };
+  window.syncToCloud=async function(silent){
+    if(!apiReady()){ if(!silent) notify('Cloud sync is not configured yet','err'); return false; }
+    try{
+      var data={}; Object.keys(SYNC_KEYS).forEach(function(k){ try{data[k]=JSON.parse(localStorage.getItem(SYNC_KEYS[k])||'[]')}catch(e){data[k]=[]} });
+      var result=await apiPost({action:'writeAll',data:data,t:Date.now()});
+      if(!result.ok) throw new Error(result.error||'Cloud write failed');
+      localStorage.setItem('ht_last_sync', new Date().toISOString());
+      if(!silent) notify('Saved to cloud');
+      return true;
+    }catch(err){ if(!silent) notify('Cloud save failed: '+err.message,'err'); return false; }
+  };
+  var timer=null;
+  window.autoCloudSync=function(){ if(!apiReady()) return; clearTimeout(timer); timer=setTimeout(function(){syncToCloud(true)},1200); };
+  // Rewire APP setters so every device-visible dataset can auto-sync after local save.
+  function rewireAppSync(){
+    if(!window.APP && typeof APP==='undefined') return;
+    var app=window.APP||APP;
+    Object.keys(SYNC_KEYS).forEach(function(prop){
+      try{Object.defineProperty(app,prop,{configurable:true,get:function(){return ld(SYNC_KEYS[prop], defaultFor(prop));},set:function(v){sv(SYNC_KEYS[prop],v); window.autoCloudSync();}})}catch(e){}
+    });
+  }
+  function defaultFor(prop){try{ if(prop==='students')return defSt(); if(prop==='sessions')return defS(); if(prop==='instructors')return defI(); if(prop==='products')return defProducts(); if(prop==='events')return defEvents(); }catch(e){} return [];}
+  window.renderAllViews=function(){['renderDashboard','renderStudents','renderSchedule','renderAttView','renderPayments','renderPortalList','renderPortal','renderMarket','renderEvents'].forEach(function(fn){try{ if(typeof window[fn]==='function') window[fn](); else if(typeof eval(fn)==='function') eval(fn+'()'); }catch(e){}});};
+  function injectSyncSettings(){
+    var settings=document.querySelector('#page-settings .settings-layout'); if(!settings || document.getElementById('cloud-sync-card')) return;
+    var c=getCfg(), last=localStorage.getItem('ht_last_sync')||'Never';
+    var div=document.createElement('div'); div.className='sync-card'; div.id='cloud-sync-card';
+    div.innerHTML='<div class="card-title">Cloud Sync for All Devices</div><div class="sync-status">Use the Apps Script Web App URL and API key from <strong>backend/Code.gs</strong>. This is required for phone and laptop to show the same roster.</div><div class="sync-row single"><input class="form-input" id="sync-url" placeholder="Apps Script Web App URL" value="'+c.url.replace(/"/g,'&quot;')+'"></div><div class="sync-row"><input class="form-input" id="sync-key" placeholder="API key" value="'+c.key.replace(/"/g,'&quot;')+'"><button class="save-btn" onclick="saveCloudSyncSettings()">Save Sync Settings</button></div><div class="sync-row"><button class="sh-btn primary" onclick="syncFromCloud(false)">Load Cloud Data</button><button class="sh-btn" onclick="syncToCloud(false)">Save This Device to Cloud</button></div><div class="sync-status" id="sync-status-line">Last sync: '+last+'</div>';
+    settings.prepend(div);
+  }
+  window.saveCloudSyncSettings=function(){setCfg(document.getElementById('sync-url').value.trim(),document.getElementById('sync-key').value.trim());notify('Cloud sync settings saved');syncFromCloud(false);};
+  var oldSwitch=window.switchView; window.switchView=function(v){var r=oldSwitch?oldSwitch(v):undefined; setTimeout(function(){injectSyncSettings();forceMobileScroll();},30); return r;};
+  function forceMobileScroll(){
+    document.documentElement.style.overflowY='auto'; document.body.style.overflowY='auto'; document.body.style.overflowX='hidden'; document.body.style.position='static'; document.body.style.height='auto';
+    ['.main-wrap','.content','.page.active','#portal-phone','.portal-phone','.portal-body'].forEach(function(sel){document.querySelectorAll(sel).forEach(function(el){el.style.height='auto';el.style.maxHeight='none';el.style.overflowY='visible';el.style.webkitOverflowScrolling='touch';});});
+    var c=document.querySelector('.content'); if(c){c.style.minHeight='calc(100svh - var(--hh))';}
+  }
+  window.forceMobileScroll=forceMobileScroll;
+  ['DOMContentLoaded','load','resize','orientationchange'].forEach(function(ev){window.addEventListener(ev,function(){rewireAppSync();injectSyncSettings();forceMobileScroll();}, {passive:true});});
+  setTimeout(function(){rewireAppSync();injectSyncSettings();forceMobileScroll();syncFromCloud(true);},800);
+  setInterval(function(){ if(apiReady()) syncFromCloud(true); },30000);
+})();
+</script>
+
 </body>
 </html>

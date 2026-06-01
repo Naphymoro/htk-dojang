@@ -1,0 +1,26 @@
+Audit summary
+
+1. Device sync
+The app was saving roster and attendance data in browser localStorage only. That is why phone and laptop showed different roster counts (for example 8 vs 10). localStorage is per device and cannot synchronize by itself.
+
+Fix added:
+- Added cloud sync bridge in index.html.
+- Added Settings > Cloud Sync for All Devices.
+- Added Save Sync Settings, Load Cloud Data, and Save This Device to Cloud buttons.
+- Added automatic cloud sync after changes when the Apps Script URL/API key are configured.
+- Updated backend/Code.gs to include Students plus Parents, Wallet, Products, Orders, Events, Absences, Sessions, Attendance, Payments, and Instructors.
+
+Important: synchronization will only work after deploying backend/Code.gs as a Google Apps Script Web App and entering its URL/API key in app Settings.
+
+2. Vertical scrolling
+The original CSS had several scroll blockers including body overflow hidden, fixed 100vh shells, and inner scroll panels. Parent view was especially affected on mobile because it lived inside a phone-card style container.
+
+Fix added:
+- Added final CSS override to make the page and parent portal height auto and overflow visible.
+- Removed fixed-height scroll traps for .content, .page, .portal-phone, #portal-phone, and .portal-body.
+- Added mobile-specific padding and one continuous page-scroll behavior.
+- Added runtime forceMobileScroll() to repair inline styles after view changes.
+
+3. Service worker
+- Cache version bumped to han-tkd-v6-cloud-sync-mobile-scroll.
+- After deploying, open the page once, hard refresh, or clear site data if the old service worker is still serving cached files.

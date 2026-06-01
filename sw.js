@@ -4,7 +4,7 @@
 // Version: bump CACHE_VERSION to force update on all devices
 // ═══════════════════════════════════════════════════════════════
 
-const CACHE_VERSION  = 'han-tkd-v5-audit-scroll-search';
+const CACHE_VERSION  = 'han-tkd-v6-cloud-sync-mobile-scroll';
 const STATIC_CACHE   = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE  = `${CACHE_VERSION}-dynamic`;
 

@@ -14,6 +14,12 @@ const SHEETS = {
   attendance:  'Attendance',
   instrAtt:    'InstructorAttendance',
   payments:    'Payments',
+  parents:     'Parents',
+  wallet:      'Wallet',
+  products:    'Products',
+  orders:      'Orders',
+  events:      'Events',
+  absences:    'Absences',
 };
 
 // ── CORS helper ──────────────────────────────────────────────
@@ -223,7 +229,13 @@ function setupSheets() {
     Sessions:             ['id','type','day','start','end','instructors','students','notes'],
     Attendance:           ['studentId','sessionId','date','ts'],
     InstructorAttendance: ['iid','date','ts'],
-    Payments:             ['id','studentId','amount','method','period','date','status'],
+    Payments:             ['id','studentId','amount','method','period','date','status','phone','purpose','parentId','confirmedBy','confirmedAt'],
+    Parents:              ['id','name','phone','email','children','emergencyContact'],
+    Wallet:               ['id','parentId','studentId','amount','type','purpose','date','ts','staff','notes'],
+    Products:             ['id','name','category','price','stock','desc','sizes','image'],
+    Orders:               ['id','productId','item','studentId','parentId','amount','status','date','paymentStatus'],
+    Events:               ['id','title','date','time','location','fee','deadline','desc','students','status'],
+    Absences:             ['id','studentId','sessionId','date','reason','status','ts'],
   };
 
   for (const [name, headers] of Object.entries(schema)) {
