@@ -1356,7 +1356,7 @@ function closeSidebar(){document.getElementById('sidebar').classList.remove('ope
 // ════════════════════════════════════════════
 
 // Default PINs — admin should change in Settings
-const DEFAULT_PINS = { admin:'1234', manager:'9012', instructor:'5678' };
+const DEFAULT_PINS = { admin:'1234', manager:'1234', instructor:'1234' };
 function getPins(){ return ld('ht_pins', DEFAULT_PINS); }
 
 let currentRole = 'admin'; // active role
@@ -3842,6 +3842,258 @@ setTimeout(requestNotificationPermission, 10000);
     syncBidirectionalSessionAssignments();
     try{ renderStudents(); renderSchedule(); renderAttView(); renderPortalList(); }catch(e){}
   },1200);
+})();
+</script>
+<script id="subscription-momo-pin-patch">
+(function(){
+  var TEST_PIN = '1234';
+  var MOMO_CODE = '052439';
+
+  function planNumber(plan){
+    var n = Number(plan) || 1;
+    return Math.max(1, Math.min(3, Math.round(n)));
+  }
+  function baseSubscriptionRate(){
+    return Number(APP.lessonFee || 150000) || 150000;
+  }
+  window.subscriptionRates = function(){
+    var base = baseSubscriptionRate();
+    return {1:base, 2:base*2, 3:base*3};
+  };
+  window.monthlyFeeForPlan = function(plan){
+    var rates = window.subscriptionRates();
+    return rates[planNumber(plan)] || rates[1];
+  };
+  window.formatRwf = function(amount){
+    return 'RWF ' + Number(amount || 0).toLocaleString();
+  };
+  window.formatRwfCompact = function(amount){
+    var n = Number(amount || 0);
+    if(n >= 1000 && n % 1000 === 0) return 'RWF ' + (n / 1000) + 'K';
+    return window.formatRwf(n);
+  };
+  window.momoUssdForAmount = function(amount){
+    return '*182*8*1*' + MOMO_CODE + '*' + Math.max(0, Number(amount) || 0) + '#';
+  };
+
+  function decorateSubscriptionSetting(){
+    var feeInput = document.getElementById('s-fee');
+    if(!feeInput) return;
+    var label = feeInput.closest('.form-row')?.querySelector('.form-label');
+    if(label) label.textContent = 'Base Subscription Rate (RWF)';
+    feeInput.title = 'Use 150000 for RWF 150K. Monthly plan rates are calculated from this subscription rate.';
+    feeInput.onchange = function(){
+      APP.lessonFee = Number(this.value) || 150000;
+      renderStudents();
+      renderPayments();
+      renderDashboard();
+      renderPortal();
+    };
+  }
+
+  window.getPins = function(){
+    return {admin:TEST_PIN, manager:TEST_PIN, instructor:TEST_PIN};
+  };
+
+  window.pinSubmit = function(){
+    if(pinBuffer === TEST_PIN){
+      hideAuthScreen();
+      applyRole(authTargetRole);
+      showToast('Welcome, ' + ROLE_CHIP_CONFIG[authTargetRole].label);
+      return;
+    }
+    var err = document.getElementById('auth-error');
+    if(err) err.textContent = 'Incorrect PIN - use 1234 for testing';
+    for(var i=0;i<4;i++){
+      var dot = document.getElementById('pd' + i);
+      if(dot) dot.classList.add('error');
+    }
+    setTimeout(function(){ resetPinUI(); }, 800);
+  };
+
+  window.confirmParentLogin = function(){
+    var sel = document.getElementById('auth-student-sel');
+    var pinEl = document.getElementById('parent-pin-inp');
+    var err = document.getElementById('parent-pin-error');
+    if(!sel || !sel.value){
+      if(err) err.textContent = 'Search and select your child first';
+      showToast('Search and select your child first', 'err');
+      return;
+    }
+    var list = typeof canonicalStudents === 'function' ? canonicalStudents() : (APP.students || []);
+    var st = list.find(function(x){ return String(x.id) === String(sel.value); });
+    if(!st){
+      if(err) err.textContent = 'Selected child is not in the student register';
+      return;
+    }
+    var entered = pinEl ? pinEl.value.trim() : '';
+    if(entered !== TEST_PIN){
+      if(err) err.textContent = 'Incorrect PIN - use 1234 for testing';
+      if(pinEl){ pinEl.value = ''; pinEl.focus(); }
+      return;
+    }
+    if(err) err.textContent = '';
+    parentStudentId = st.id;
+    hideAuthScreen();
+    applyRole('parent');
+    showToast('Welcome, ' + st.name + String.fromCharCode(39) + 's parent');
+  };
+
+  window.paymentState = function(st){
+    var paid = APP.payments.some(function(p){
+      return p.studentId === st.id && p.period === mLabel() && p.status === 'paid';
+    });
+    var parent = APP.parents.find(function(x){ return x.id === st.parentId; });
+    var bal = walletBalance(st.parentId || '');
+    return {
+      fee: window.monthlyFeeForPlan(st.plan),
+      paid: paid,
+      bal: bal,
+      parent: parent,
+      status: paid ? 'paid' : bal > 0 ? 'wallet-funded' : 'overdue'
+    };
+  };
+
+  window.createMomoPending = function(studentId, method, phone, amount, purpose){
+    var items = APP.getPendingPayments();
+    var st = APP.students.find(function(s){ return s.id === studentId; });
+    var value = Number(amount) || 0;
+    if(!st){ showToast('Student not found', 'err'); return; }
+    if(!method || !phone || !value){ showToast('MoMo method, phone and amount are required', 'err'); return; }
+    items.push({
+      id:'MOMO-' + Date.now(),
+      studentId:studentId,
+      parentId:st.parentId || '',
+      method:method,
+      phone:phone,
+      amount:value,
+      purpose:purpose,
+      momoCode:MOMO_CODE,
+      ussd:window.momoUssdForAmount(value),
+      status:'pending',
+      date:tds(),
+      ts:Date.now()
+    });
+    APP.setPendingPayments(items);
+    showToast('MoMo request ready: ' + window.momoUssdForAmount(value), 'gold');
+    renderPortal();
+    renderPayments();
+  };
+
+  window.submitMomoForStudent = function(studentId){
+    var method = document.getElementById('momo-method')?.value || 'MTN MoMo';
+    var phone = document.getElementById('momo-phone')?.value.trim() || '';
+    var amount = document.getElementById('momo-amount')?.value || 0;
+    var purpose = document.getElementById('momo-purpose')?.value || 'tuition';
+    window.createMomoPending(studentId, method, phone, amount, purpose);
+  };
+
+  window.openAddPayment = function(){
+    var students = APP.students;
+    if(!students.length){ showToast('Add students first', 'err'); return; }
+    var names = students.map(function(s,i){ return (i+1) + '. ' + s.name; }).join('\n');
+    var idx = parseInt(prompt('Select student:\n' + names + '\n\nEnter number:'), 10) - 1;
+    if(isNaN(idx) || idx < 0 || idx >= students.length) return;
+    var st = students[idx];
+    var fee = window.monthlyFeeForPlan(st.plan);
+    var amount = parseInt(prompt('Amount (RWF):', fee) || fee, 10);
+    var method = prompt('Method:\n' + METHODS.join(' / '), METHODS[0]) || METHODS[0];
+    var period = prompt('Period:', mLabel()) || mLabel();
+    var payments = APP.payments;
+    payments.push({id:'p'+Date.now(),studentId:st.id,amount:amount,method:method,period:period,date:tds(),status:'paid'});
+    APP.payments = payments;
+    renderPayments();
+    renderDashboard();
+    showToast('Payment recorded');
+  };
+
+  var baseRenderDashboard = window.renderDashboard;
+  window.renderDashboard = function(){
+    if(baseRenderDashboard) baseRenderDashboard();
+    var collected = APP.payments.filter(function(p){ return p.status === 'paid'; }).reduce(function(s,p){ return s + Number(p.amount || 0); }, 0);
+    var rev = document.getElementById('mv-rev');
+    if(rev) rev.textContent = window.formatRwfCompact(collected).replace('RWF ', '');
+    decorateSubscriptionSetting();
+  };
+
+  window.renderPayments = function(){
+    var payments = APP.payments;
+    var students = APP.students;
+    var exp = students.reduce(function(sum,st){ return sum + window.monthlyFeeForPlan(st.plan); }, 0);
+    var col = payments.filter(function(p){ return p.status === 'paid'; }).reduce(function(sum,p){ return sum + Number(p.amount || 0); }, 0);
+    var payCol = document.getElementById('pay-col');
+    var payOut = document.getElementById('pay-out');
+    var payExp = document.getElementById('pay-exp');
+    if(payCol) payCol.textContent = window.formatRwf(col);
+    if(payOut) payOut.textContent = window.formatRwf(Math.max(0, exp - col));
+    if(payExp) payExp.textContent = window.formatRwf(exp);
+    var plans = ['-','1x/wk','2x/wk','3x/wk'];
+    var body = document.getElementById('payments-body');
+    if(body){
+      body.innerHTML = payments.length ? payments.slice().reverse().map(function(p){
+        var st = students.find(function(x){ return x.id === p.studentId; });
+        return '<tr><td class="nm">'+(st?.name || '-')+'</td><td>'+p.period+'</td><td><span class="pill p-blue">'+plans[planNumber(st?.plan || 1)]+'</span></td><td class="mono">'+Number(p.amount || 0).toLocaleString()+'</td><td>'+p.method+'</td><td class="mono">'+p.date+'</td><td><span class="pill '+(p.status === 'paid' ? 'p-green' : 'p-red')+'">'+p.status+'</span></td></tr>';
+      }).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--dim);padding:16px">No payments recorded yet</td></tr>';
+    }
+    renderMomoPending();
+  };
+
+  window.renderMomoPending = function(){
+    var body = document.getElementById('momo-pending-body');
+    if(!body) return;
+    var rows = APP.getPendingPayments().slice().reverse();
+    body.innerHTML = rows.length ? rows.map(function(p){
+      var st = APP.students.find(function(s){ return s.id === p.studentId; });
+      var ussd = p.ussd || window.momoUssdForAmount(p.amount);
+      return '<tr><td class="nm">'+(st?.name || '-')+'</td><td>'+p.method+'</td><td class="mono">'+p.phone+'<div style="font-size:10px;color:var(--muted);margin-top:3px">'+ussd+'</div></td><td>'+p.purpose+'</td><td class="mono">'+window.formatRwfCompact(p.amount)+'</td><td class="mono">'+p.date+'</td><td><span class="pill '+(p.status === 'confirmed' ? 'p-green' : p.status === 'rejected' ? 'p-red' : 'p-gold')+'">'+p.status+'</span></td><td>'+(p.status === 'pending' ? '<div class="pay-actions"><button class="sh-btn primary" onclick="confirmMomo(\''+p.id+'\',true)">Confirm</button><button class="sh-btn" onclick="confirmMomo(\''+p.id+'\',false)">Reject</button></div>' : '-')+'</td></tr>';
+    }).join('') : '<tr><td colspan="8" style="text-align:center;color:var(--dim);padding:14px">No pending MoMo payments</td></tr>';
+  };
+
+  function updateMomoHint(){
+    var amount = document.getElementById('momo-amount')?.value || 0;
+    var code = document.getElementById('momo-ussd-code');
+    if(code) code.textContent = window.momoUssdForAmount(amount);
+  }
+  function injectMomoInstructions(){
+    var form = document.querySelector('.momo-form');
+    if(!form) return;
+    if(!document.getElementById('momo-ussd-hint')){
+      var note = document.createElement('div');
+      note.id = 'momo-ussd-hint';
+      note.className = 'smart-note';
+      note.innerHTML = 'MoMo request code: <strong>'+MOMO_CODE+'</strong><br>Dial <span class="mono" id="momo-ussd-code"></span>';
+      var submit = form.querySelector('.portal-pay');
+      form.insertBefore(note, submit || form.firstChild);
+    }
+    var amountEl = document.getElementById('momo-amount');
+    if(amountEl) amountEl.oninput = updateMomoHint;
+    updateMomoHint();
+  }
+
+  var baseRenderPortal = window.renderPortal;
+  window.renderPortal = function(){
+    if(baseRenderPortal) baseRenderPortal();
+    injectMomoInstructions();
+  };
+
+  window.renderStudents = function(){
+    var b = document.getElementById('students-body');
+    if(!b) return;
+    var students = currentRole === 'instructor' ? getInstructorStudents() : APP.students;
+    b.innerHTML = students.map(function(s){
+      var cnt = APP.attendance.filter(function(a){ return a.studentId === s.id && a.date.startsWith(mths()); }).length;
+      var req = (s.plan || 1) * 4;
+      var pct = req ? Math.round(cnt / req * 100) : 0;
+      var ps = paymentState(s);
+      var monthly = window.monthlyFeeForPlan(s.plan);
+      return '<tr><td class="nm">'+s.name+'</td><td>'+s.age+' yrs<br><span style="font-size:10.5px;color:var(--muted)">'+childSessionLine(s)+'</span></td><td><span class="belt '+(BC[s.belt] || 'b-white')+'"><span class="belt-sw"></span>'+s.belt+'</span></td><td>'+s.plan+'/week</td><td>'+childSessionLine(s)+'</td><td class="mono" title="'+window.formatRwf(monthly)+'">'+window.formatRwfCompact(monthly)+'</td><td>'+cnt+'/'+req+' - '+pct+'%</td><td><span class="pill '+(ps.status === 'paid' ? 'p-green' : ps.status === 'wallet-funded' ? 'p-teal' : 'p-red')+'">'+ps.status+'</span></td><td><button class="sh-btn" onclick="openEditStudent(\''+s.id+'\')">Edit</button> <button class="sh-btn primary" onclick="switchView(\'parent\');document.getElementById(\'portal-sel\').value=\''+s.id+'\';renderPortal()">Full profile</button></td></tr>';
+    }).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--dim);padding:14px">No students</td></tr>';
+  };
+
+  setTimeout(function(){
+    decorateSubscriptionSetting();
+    try{ renderDashboard(); renderStudents(); renderPayments(); renderPortal(); }catch(e){}
+  }, 80);
 })();
 </script>
 </body>
