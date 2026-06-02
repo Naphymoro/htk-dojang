@@ -3609,5 +3609,240 @@ setTimeout(requestNotificationPermission, 10000);
   try { renderMarketplace(); renderEvents(); } catch(e) {}
 })();
 </script>
+<script id="session-assignment-restore-script">
+(function(){
+  function notifySession(msg,type){ try{ showToast(msg,type||'ok'); }catch(e){ console.log(msg); } }
+  function listify(v){
+    if(Array.isArray(v)) return v;
+    if(typeof v === 'string' && v.trim()){
+      try{ var parsed=JSON.parse(v); return Array.isArray(parsed)?parsed:[]; }
+      catch(e){ return v.split(',').map(function(x){return x.trim();}).filter(Boolean); }
+    }
+    return [];
+  }
+  function cleanTime(v){
+    if(typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v)) return v.slice(11,16);
+    return v || '';
+  }
+  function sessionKey(sess){
+    return [sess.type||'',sess.day||'',cleanTime(sess.start),cleanTime(sess.end)].join('|').toLowerCase();
+  }
+  function normalizeName(v){
+    return String(v||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+  }
+  function isAdminLevel(){
+    return currentRole === 'admin' || currentRole === 'manager';
+  }
+  function normalizedSessions(list){
+    return (list||[]).map(function(sess){
+      var out=Object.assign({},sess);
+      out.start=cleanTime(out.start);
+      out.end=cleanTime(out.end);
+      out.instructors=listify(out.instructors);
+      out.students=listify(out.students);
+      return out;
+    });
+  }
+  window.ensureBaseSchedule=function(){
+    if(typeof APP === 'undefined' || typeof defS !== 'function') return false;
+    var existing=normalizedSessions(APP.sessions || []);
+    var seen={};
+    existing.forEach(function(sess){ seen[sessionKey(sess)]=true; });
+    var added=false;
+    defS().forEach(function(base){
+      var key=sessionKey(base);
+      if(!seen[key]){
+        existing.push(Object.assign({},base,{students:listify(base.students),instructors:listify(base.instructors)}));
+        seen[key]=true;
+        added=true;
+      }
+    });
+    var changed=added || JSON.stringify(existing)!==JSON.stringify(APP.sessions || []);
+    if(changed) APP.sessions=existing;
+    return changed;
+  };
+  function matchStudentToken(token){
+    var needle=normalizeName(token);
+    if(!needle) return null;
+    var students=APP.students || [];
+    return students.find(function(st){
+      var id=normalizeName(st.id);
+      var name=normalizeName(st.name);
+      return id===needle || name===needle || (needle.length>=4 && (name.indexOf(needle)===0 || needle.indexOf(name)===0));
+    }) || null;
+  }
+  function setStudentSessions(stId, sessionIds){
+    var students=APP.students || [];
+    var idx=students.findIndex(function(st){return st.id===stId;});
+    if(idx<0) return null;
+    students[idx]=Object.assign({},students[idx],{sessions:Array.from(new Set(sessionIds.filter(Boolean)))});
+    APP.students=students;
+    return students[idx];
+  }
+  function saveSessionList(sessions){
+    APP.sessions=sessions.map(function(sess){
+      var out=Object.assign({},sess);
+      out.students=Array.from(new Set(listify(out.students).filter(Boolean)));
+      out.instructors=listify(out.instructors);
+      out.start=cleanTime(out.start);
+      out.end=cleanTime(out.end);
+      return out;
+    });
+  }
+  window.syncStudentSessionAssignments=function(st){
+    if(!st) return;
+    ensureBaseSchedule();
+    var wanted=new Set(listify(st.sessions));
+    var studentName=st.name || '';
+    var aliases=[normalizeName(st.id),normalizeName(st.name)].filter(Boolean);
+    var sessions=normalizedSessions(APP.sessions || []);
+    sessions.forEach(function(sess){
+      sess.students=listify(sess.students).filter(function(token){
+        var norm=normalizeName(token);
+        if(aliases.indexOf(norm)>=0) return false;
+        var matched=matchStudentToken(token);
+        return !(matched && matched.id===st.id);
+      });
+      if(wanted.has(sess.id) && studentName && sess.students.indexOf(studentName)===-1){
+        sess.students.push(studentName);
+      }
+    });
+    saveSessionList(sessions);
+  };
+  window.syncBidirectionalSessionAssignments=function(){
+    ensureBaseSchedule();
+    var students=(APP.students || []).map(function(st){
+      var out=Object.assign({},st);
+      out.sessions=listify(out.sessions);
+      return out;
+    });
+    var changed=false;
+    var sessions=normalizedSessions(APP.sessions || []);
+    sessions.forEach(function(sess){
+      listify(sess.students).forEach(function(token){
+        var st=matchStudentToken(token);
+        if(st && sess.id){
+          var target=students.find(function(x){return x.id===st.id;});
+          if(target && target.sessions.indexOf(sess.id)===-1){
+            target.sessions.push(sess.id);
+            changed=true;
+          }
+        }
+      });
+    });
+    APP.students=students;
+    students.forEach(function(st){ window.syncStudentSessionAssignments(st); });
+    return changed;
+  };
+  window.renderSessionChecks=function(selected){
+    ensureBaseSchedule();
+    var box=document.getElementById('sf-sessions'); if(!box) return;
+    selected=listify(selected);
+    var age=Number((document.getElementById('sf-age')||{}).value||0);
+    var selectedSet=new Set(selected);
+    if(!age){
+      box.innerHTML='<div class="smart-note">Enter age first. Eligible class schedules will appear here.</div>';
+      var emptyNote=document.getElementById('sf-age-note'); if(emptyNote) emptyNote.textContent='Enter age to reveal eligible schedules only. Admin/Manager may override.';
+      return;
+    }
+    var sessions=normalizedSessions(APP.sessions || []);
+    var eligible=sessions.filter(function(sess){return isSessionAgeEligible(age,sess);});
+    var selectedLocked=sessions.filter(function(sess){return selectedSet.has(sess.id) && !eligible.some(function(e){return e.id===sess.id;});});
+    var visible=eligible.concat(selectedLocked);
+    box.innerHTML=visible.length ? visible.map(function(sess){
+      var ok=isSessionAgeEligible(age,sess);
+      var disabled=!ok && !isAdminLevel() ? ' disabled' : '';
+      var checked=selectedSet.has(sess.id) ? ' checked' : '';
+      var suffix=ok ? '' : (isAdminLevel() ? ' - override' : ' - age restricted');
+      return '<label class="session-check '+(ok?'':'locked')+'"><input type="checkbox" value="'+sess.id+'" onchange="handleStudentSessionToggle()"'+checked+disabled+'><span>'+sessionLabel(sess)+suffix+'</span></label>';
+    }).join('') : '<div class="smart-note">No class schedule currently matches this student age.</div>';
+    var note=document.getElementById('sf-age-note');
+    if(note) note.textContent=visible.length ? 'Eligible schedules are shown from the student age. Click a schedule to assign it.' : 'No class schedule currently matches this student age.';
+  };
+  window.handleStudentSessionToggle=function(){
+    if(!editStudentId) return;
+    var checked=[].slice.call(document.querySelectorAll('#sf-sessions input:checked')).map(function(x){return x.value;});
+    var st=setStudentSessions(editStudentId, checked);
+    if(st){
+      syncStudentSessionAssignments(st);
+      try{ renderStudents(); renderSchedule(); renderAttView(); renderPortalList(); }catch(e){}
+      notifySession('Session assignment updated');
+    }
+  };
+  window.assignStudentToSession=function(stId,sessId){
+    ensureBaseSchedule();
+    var st=(APP.students || []).find(function(x){return x.id===stId;});
+    if(!st){ notifySession('Student not found','err'); return false; }
+    var current=listify(st.sessions);
+    if(current.indexOf(sessId)===-1) current.push(sessId);
+    st=setStudentSessions(st.id,current);
+    syncStudentSessionAssignments(st);
+    try{ renderStudents(); renderSchedule(); renderAttView(); renderPortalList(); renderPortal(); }catch(e){}
+    notifySession('Student assigned to session');
+    return true;
+  };
+  window.assignStudentToSessionFromSchedule=function(sessId){
+    var sel=document.getElementById('schedule-assign-student');
+    if(!sel || !sel.value){ notifySession('Select a student to assign','err'); return; }
+    if(assignStudentToSession(sel.value,sessId) && typeof openScheduleRoster === 'function'){
+      setTimeout(function(){ openScheduleRoster(sessId); },50);
+    }
+  };
+  var previousOpenScheduleRoster=window.openScheduleRoster || (typeof openScheduleRoster === 'function' ? openScheduleRoster : null);
+  if(previousOpenScheduleRoster){
+    window.openScheduleRoster=function(sessId){
+      previousOpenScheduleRoster(sessId);
+      var drawer=document.getElementById('schedule-roster-drawer');
+      var sess=(APP.sessions || []).find(function(x){return x.id===sessId;});
+      if(!drawer || !sess || !isAdminLevel()) return;
+      var assigned=new Set((APP.students || []).filter(function(st){return isStudentScheduled(st,sess);}).map(function(st){return st.id;}));
+      var candidates=(APP.students || []).filter(function(st){return !assigned.has(st.id) && isSessionAgeEligible(st.age,sess);});
+      var html='<div class="parent-profile-card admin-only" style="margin-top:12px"><div class="pb-lbl">Assign student to this session</div>';
+      if(candidates.length){
+        html+='<div class="form-2"><select class="form-input" id="schedule-assign-student">'+candidates.map(function(st){return '<option value="'+st.id+'">'+st.name+' - age '+st.age+' - '+st.belt+'</option>';}).join('')+'</select><button class="save-btn" onclick="assignStudentToSessionFromSchedule(\''+sessId+'\')">Assign</button></div>';
+      }else{
+        html+='<div class="smart-note">All age-eligible students are already assigned to this session.</div>';
+      }
+      html+='</div>';
+      drawer.insertAdjacentHTML('beforeend',html);
+      applyUIRestrictions(currentRole);
+    };
+  }
+  var previousOpenStudentForm=window.openStudentForm || (typeof openStudentForm === 'function' ? openStudentForm : null);
+  if(previousOpenStudentForm){
+    window.openStudentForm=function(st){
+      ensureBaseSchedule();
+      previousOpenStudentForm(st || null);
+      var ageEl=document.getElementById('sf-age');
+      if(ageEl){
+        ageEl.oninput=function(){
+          var selected=[].slice.call(document.querySelectorAll('#sf-sessions input:checked')).map(function(x){return x.value;});
+          renderSessionChecks(selected);
+        };
+      }
+      renderSessionChecks(st ? listify(st.sessions) : []);
+    };
+    window.openAddStudent=function(){ window.openStudentForm(null); };
+    window.editStudent=function(id){ var st=(APP.students || []).find(function(s){return s.id===id;}); if(st) window.openStudentForm(st); };
+    window.assignStudentSessions=function(id){ window.editStudent(id); };
+    window.openEditStudent=function(id){ window.editStudent(id); };
+  }
+  var previousSyncFrom=window.syncFromCloud;
+  if(typeof previousSyncFrom === 'function'){
+    window.syncFromCloud=async function(silent){
+      var ok=await previousSyncFrom(silent);
+      ensureBaseSchedule();
+      syncBidirectionalSessionAssignments();
+      try{ renderAllViews(); }catch(e){}
+      return ok;
+    };
+  }
+  setTimeout(function(){
+    ensureBaseSchedule();
+    syncBidirectionalSessionAssignments();
+    try{ renderStudents(); renderSchedule(); renderAttView(); renderPortalList(); }catch(e){}
+  },1200);
+})();
+</script>
 </body>
 </html>
