@@ -3338,5 +3338,276 @@ setTimeout(requestNotificationPermission, 10000);
 })();
 </script>
 
+<style id="audit-workflow-repair-style">
+  body[data-role="parent"] #page-market .buy-action,
+  body[data-role="parent"] #page-events .event-register-action,
+  body[data-role="parent"] #page-parent .parent-wallet-action,
+  body[data-role="parent"] #portal-phone .parent-wallet-action {
+    display:inline-flex !important;
+  }
+  body[data-role="parent"] .admin-only,
+  body[data-role="instructor"] .admin-only {
+    display:none !important;
+  }
+  .audit-action-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+  .audit-list{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+  .audit-list-item{border:1px solid var(--border);border-radius:9px;padding:8px;background:var(--ibg);font-size:12px;color:var(--fg)}
+  .auth-overlay{
+    position:fixed !important;
+    inset:0 !important;
+    width:100vw !important;
+    min-height:100svh !important;
+    box-sizing:border-box !important;
+    padding:16px !important;
+    display:flex !important;
+    align-items:flex-start !important;
+    justify-content:center !important;
+    overflow-y:auto !important;
+    overflow-x:hidden !important;
+  }
+  .auth-box{
+    box-sizing:border-box !important;
+    flex:0 1 calc(100vw - 32px) !important;
+    width:calc(100vw - 32px) !important;
+    max-width:340px !important;
+    min-width:0 !important;
+    margin:20px auto 40px !important;
+    overflow:hidden !important;
+  }
+  @media(max-width:420px){
+    .auth-body{padding:18px !important}
+    .auth-box{width:calc(100vw - 64px) !important;max-width:340px !important}
+    .auth-role-select{grid-template-columns:1fr 1fr !important}
+    .auth-title{font-size:20px !important;letter-spacing:1.4px !important}
+  }
+  @media(max-width:360px){
+    .auth-box{width:calc(100vw - 32px) !important}
+    .auth-role-select{grid-template-columns:1fr !important}
+  }
+</style>
+<script id="audit-workflow-repair-script">
+(function(){
+  var productEditId = null;
+  var eventEditId = null;
+
+  function esc(v){
+    return String(v == null ? '' : v).replace(/[&<>"']/g, function(ch){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];
+    });
+  }
+  function notify(msg,type){ try{ showToast(msg,type||'ok'); }catch(e){ console.log(msg); } }
+  function asArray(v){
+    if (Array.isArray(v)) return v;
+    if (typeof v === 'string' && v.trim()){
+      try { var parsed = JSON.parse(v); return Array.isArray(parsed) ? parsed : []; } catch(e) { return v.split(',').map(function(x){return x.trim();}).filter(Boolean); }
+    }
+    return [];
+  }
+  function normalizeTime(v){
+    if (typeof v !== 'string') return v;
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v)) return v.slice(11,16);
+    return v;
+  }
+  function normalizeDate(v){
+    if (typeof v !== 'string') return v;
+    if (/^\d{4}-\d{2}-\d{2}T/.test(v)) return v.slice(0,10);
+    return v;
+  }
+  function normalizeCloudData(){
+    try{
+      var students = APP.students.map(function(st){
+        var out = Object.assign({}, st);
+        out.sessions = asArray(out.sessions);
+        out.parentPin = String(out.parentPin == null ? '0000' : out.parentPin).padStart(4,'0').slice(-4);
+        return out;
+      });
+      APP.students = students;
+      APP.sessions = APP.sessions.map(function(sess){
+        var out = Object.assign({}, sess);
+        out.start = normalizeTime(out.start);
+        out.end = normalizeTime(out.end);
+        out.students = asArray(out.students);
+        out.instructors = asArray(out.instructors);
+        return out;
+      });
+      APP.attendance = APP.attendance.map(function(a){
+        var out = Object.assign({}, a);
+        out.date = normalizeDate(out.date);
+        if(!out.id) out.id = 'a-' + [out.studentId,out.sessionId,out.date,out.ts || Date.now()].join('-');
+        return out;
+      });
+      APP.instrAtt = APP.instrAtt.map(function(a){
+        var out = Object.assign({}, a);
+        out.date = normalizeDate(out.date);
+        if(!out.id) out.id = 'ia-' + [out.iid,out.date,out.ts || Date.now()].join('-');
+        return out;
+      });
+      APP.events = APP.events.map(function(e){
+        var out = Object.assign({}, e);
+        out.date = normalizeDate(out.date);
+        out.deadline = normalizeDate(out.deadline);
+        out.students = asArray(out.students);
+        return out;
+      });
+      APP.orders = APP.orders.map(function(o){ var out = Object.assign({}, o); out.date = normalizeDate(out.date); return out; });
+      APP.wallet = APP.wallet.map(function(w){ var out = Object.assign({}, w); out.date = normalizeDate(out.date); if(!out.ownerId && out.parentId) out.ownerId = out.parentId; if(!out.parentId && out.ownerId) out.parentId = out.ownerId; return out; });
+    }catch(err){ console.warn('[audit repair] normalization failed', err); }
+  }
+
+  window.openEditStudent = function(id){ return editStudent(id); };
+
+  var priorSyncFrom = window.syncFromCloud;
+  if (typeof priorSyncFrom === 'function') {
+    window.syncFromCloud = async function(silent){
+      var ok = await priorSyncFrom(silent);
+      normalizeCloudData();
+      try { renderAllViews(); } catch(e) {}
+      return ok;
+    };
+  }
+
+  window.renderAllViews = function(){
+    ['renderDashboard','renderStudents','renderSchedule','renderAttView','renderInstructors','renderPayments','renderPortalList','renderPortal','renderMarketplace','renderEvents'].forEach(function(fn){
+      try { if (typeof window[fn] === 'function') window[fn](); else if (typeof eval(fn) === 'function') eval(fn + '()'); } catch(e) {}
+    });
+  };
+
+  var priorWalletTxn = window.walletTxn || (typeof walletTxn === 'function' ? walletTxn : null);
+  window.walletTxn = function(ownerId,type,amount,purpose,studentId,notes){
+    amount = Number(amount) || 0;
+    if(!ownerId){ notify('Parent wallet is not linked yet','err'); return; }
+    if(amount <= 0){ notify('Enter an amount greater than zero','err'); return; }
+    if(type === 'debit' && walletBalance(ownerId) < amount){ notify('Insufficient wallet balance','err'); return; }
+    var tx = APP.wallet;
+    tx.push({id:'WAL-'+Date.now(),ownerId:ownerId,parentId:ownerId,type:type,amount:amount,purpose:purpose,studentId:studentId||'',staff:currentRole||'system',date:tds(),ts:Date.now(),notes:notes||''});
+    APP.wallet = tx;
+    renderPortal(); renderPayments();
+    notify('Wallet transaction saved');
+  };
+
+  window.renderMarketplace = function(){
+    var grid = document.getElementById('market-grid'); if(!grid) return;
+    var products = APP.products || [];
+    var orders = (APP.orders || []).slice().reverse().slice(0,8);
+    grid.innerHTML = products.map(function(p){
+      return '<div class="market-card"><div class="avatar-xl" style="width:100%;height:110px;border-radius:14px;margin-bottom:10px">'+esc((p.category||'K')[0])+'</div><div style="font-weight:800;color:var(--fg)">'+esc(p.name)+'</div><div style="font-size:11px;color:var(--muted);margin:3px 0">'+esc(p.category||'Gear')+' · Stock '+Number(p.stock||0)+'</div><div style="font-family:Rajdhani;font-size:22px;font-weight:800;color:var(--gold)">RWF '+Number(p.price||0).toLocaleString()+'</div><div style="font-size:12px;color:var(--muted);margin:6px 0 10px">'+esc(p.desc||'')+'</div><div class="audit-action-row"><button class="sh-btn primary buy-action" data-product-buy="'+esc(p.id)+'">Request / Buy</button><button class="sh-btn admin-only" data-product-edit="'+esc(p.id)+'">Edit</button><button class="sh-btn admin-only" data-product-delete="'+esc(p.id)+'">Delete</button></div></div>';
+    }).join('') + '<div class="market-card admin-only"><div class="smart-form-title">Recent Orders</div><div class="audit-list">'+(orders.length ? orders.map(function(o){ var st = APP.students.find(function(s){return s.id===o.studentId;}); return '<div class="audit-list-item"><strong>'+esc(o.item)+'</strong><br>'+esc(st && st.name || 'Unknown student')+' · RWF '+Number(o.amount||0).toLocaleString()+' · '+esc(o.status||'requested')+'</div>'; }).join('') : '<div class="smart-note">No marketplace orders yet.</div>')+'</div></div>';
+  };
+
+  window.orderProduct = function(pid){
+    var products = APP.products;
+    var p = products.find(function(x){ return x.id === pid; });
+    var sid = parentStudentId || (document.getElementById('portal-sel') && document.getElementById('portal-sel').value) || (APP.students[0] && APP.students[0].id);
+    if(!p || !sid){ notify('Select a student first','err'); return; }
+    if(Number(p.stock||0) <= 0){ notify('Product is out of stock','err'); return; }
+    var st = APP.students.find(function(x){ return x.id === sid; });
+    var orders = APP.orders;
+    orders.push({id:'ORD-'+Date.now(),productId:pid,item:p.name,studentId:sid,parentId:st && st.parentId,amount:Number(p.price||0),status:'requested',date:tds(),paymentStatus:'pending'});
+    p.stock = Math.max(0, Number(p.stock||0) - 1);
+    APP.products = products;
+    APP.orders = orders;
+    renderMarketplace(); renderPortal();
+    notify('Marketplace order requested');
+  };
+
+  window.openProductSmartForm = function(id){
+    productEditId = id || null;
+    var p = productEditId ? APP.products.find(function(x){return x.id===productEditId;}) : null;
+    var grid = document.getElementById('market-grid'); if(!grid) return;
+    renderMarketplace();
+    grid.insertAdjacentHTML('afterbegin','<div class="market-card" style="border-color:rgba(255,30,60,.35)"><div class="smart-form-title">'+(p?'Edit Product':'New Product')+'</div><div class="form-row"><label class="form-label">Name</label><input class="form-input" id="prd-name" value="'+esc(p&&p.name||'')+'"></div><div class="form-2"><div class="form-row"><label class="form-label">Category</label><input class="form-input" id="prd-cat" value="'+esc(p&&p.category||'Gear')+'"></div><div class="form-row"><label class="form-label">Price RWF</label><input class="form-input" id="prd-price" type="number" value="'+Number(p&&p.price||0)+'"></div></div><div class="form-row"><label class="form-label">Stock</label><input class="form-input" id="prd-stock" type="number" value="'+Number(p&&p.stock||1)+'"></div><div class="form-row"><label class="form-label">Description</label><textarea class="form-input" id="prd-desc" rows="2">'+esc(p&&p.desc||'')+'</textarea></div><div class="smart-actions"><button class="btn-cancel" onclick="renderMarketplace()">Cancel</button><button class="save-btn" onclick="saveProductSmart()">Save product</button></div></div>');
+  };
+
+  window.saveProductSmart = function(){
+    var name = (document.getElementById('prd-name') || {}).value || '';
+    name = name.trim();
+    if(!name){ notify('Product name required','err'); return; }
+    var data = {name:name,category:(document.getElementById('prd-cat') || {}).value || 'Gear',price:Number((document.getElementById('prd-price') || {}).value || 0),stock:Number((document.getElementById('prd-stock') || {}).value || 0),desc:(document.getElementById('prd-desc') || {}).value || ''};
+    var products = APP.products;
+    if(productEditId){
+      var idx = products.findIndex(function(x){return x.id===productEditId;});
+      if(idx >= 0) products[idx] = Object.assign({}, products[idx], data);
+    } else {
+      products.push(Object.assign({id:'prd'+Date.now()}, data));
+    }
+    APP.products = products;
+    productEditId = null;
+    renderMarketplace();
+    notify('Product saved');
+  };
+
+  window.deleteProduct = function(id){
+    if(!confirm('Delete this product?')) return;
+    APP.products = APP.products.filter(function(p){return p.id !== id;});
+    renderMarketplace();
+    notify('Product deleted','gold');
+  };
+
+  window.renderEvents = function(){
+    var grid = document.getElementById('event-grid'); if(!grid) return;
+    grid.innerHTML = (APP.events || []).map(function(e){
+      return '<div class="event-card"><div style="font-weight:900;color:var(--fg);font-size:15px">'+esc(e.title)+'</div><div style="font-size:12px;color:var(--muted);margin:4px 0">'+esc(normalizeDate(e.date)||'')+' '+esc(e.time||'')+' · '+esc(e.location||'Dojo')+'</div><div style="font-size:12px;color:var(--muted);margin-bottom:8px">'+esc(e.desc||'')+'</div><div class="profile-line"><span>Fee</span><span>RWF '+Number(e.fee||0).toLocaleString()+'</span></div><div class="profile-line"><span>Deadline</span><span>'+esc(normalizeDate(e.deadline)||'-')+'</span></div><div class="profile-line"><span>Registered</span><span>'+asArray(e.students).length+'</span></div><div class="audit-action-row"><button class="sh-btn primary event-register-action" data-event-register="'+esc(e.id)+'">Register student</button><button class="sh-btn admin-only" data-event-edit="'+esc(e.id)+'">Edit</button><button class="sh-btn admin-only" data-event-delete="'+esc(e.id)+'">Delete</button></div></div>';
+    }).join('');
+  };
+
+  window.registerEvent = function(eid){
+    var sid = parentStudentId || (document.getElementById('portal-sel') && document.getElementById('portal-sel').value) || (APP.students[0] && APP.students[0].id);
+    if(!sid){ notify('Select a student first','err'); return; }
+    var events = APP.events;
+    var e = events.find(function(x){return x.id===eid;});
+    if(!e) return;
+    e.students = Array.from(new Set(asArray(e.students).concat([sid])));
+    APP.events = events;
+    renderEvents(); renderPortal();
+    notify('Event registration saved');
+  };
+
+  window.openEventSmartForm = function(id){
+    eventEditId = id || null;
+    var ev = eventEditId ? APP.events.find(function(x){return x.id===eventEditId;}) : null;
+    var grid = document.getElementById('event-grid'); if(!grid) return;
+    renderEvents();
+    grid.insertAdjacentHTML('afterbegin','<div class="event-card" style="border-color:rgba(255,30,60,.35)"><div class="smart-form-title">'+(ev?'Edit Event':'New Event')+'</div><div class="form-row"><label class="form-label">Title</label><input class="form-input" id="ev-title" value="'+esc(ev&&ev.title||'')+'"></div><div class="form-2"><div class="form-row"><label class="form-label">Date</label><input class="form-input" id="ev-date" type="date" value="'+esc(normalizeDate(ev&&ev.date)||tds())+'"></div><div class="form-row"><label class="form-label">Time</label><input class="form-input" id="ev-time" value="'+esc(ev&&ev.time||'10:00')+'"></div></div><div class="form-row"><label class="form-label">Location</label><input class="form-input" id="ev-location" value="'+esc(ev&&ev.location||'Han TKD Dojang')+'"></div><div class="form-2"><div class="form-row"><label class="form-label">Fee RWF</label><input class="form-input" id="ev-fee" type="number" value="'+Number(ev&&ev.fee||0)+'"></div><div class="form-row"><label class="form-label">Deadline</label><input class="form-input" id="ev-deadline" type="date" value="'+esc(normalizeDate(ev&&ev.deadline)||tds())+'"></div></div><div class="form-row"><label class="form-label">Description</label><textarea class="form-input" id="ev-desc" rows="2">'+esc(ev&&ev.desc||'')+'</textarea></div><div class="smart-actions"><button class="btn-cancel" onclick="renderEvents()">Cancel</button><button class="save-btn" onclick="saveEventSmart()">Save event</button></div></div>');
+  };
+
+  window.saveEventSmart = function(){
+    var title = ((document.getElementById('ev-title') || {}).value || '').trim();
+    if(!title){ notify('Event title required','err'); return; }
+    var data = {title:title,date:(document.getElementById('ev-date') || {}).value || tds(),time:(document.getElementById('ev-time') || {}).value || '',location:(document.getElementById('ev-location') || {}).value || '',fee:Number((document.getElementById('ev-fee') || {}).value || 0),deadline:(document.getElementById('ev-deadline') || {}).value || tds(),desc:(document.getElementById('ev-desc') || {}).value || ''};
+    var events = APP.events;
+    if(eventEditId){
+      var idx = events.findIndex(function(x){return x.id===eventEditId;});
+      if(idx >= 0) events[idx] = Object.assign({}, events[idx], data);
+    } else {
+      events.push(Object.assign({id:'ev'+Date.now(),students:[],status:'active'}, data));
+    }
+    APP.events = events;
+    eventEditId = null;
+    renderEvents();
+    notify('Event saved');
+  };
+
+  window.deleteEvent = function(id){
+    if(!confirm('Delete this event?')) return;
+    APP.events = APP.events.filter(function(e){return e.id !== id;});
+    renderEvents(); renderPortal();
+    notify('Event deleted','gold');
+  };
+
+  document.addEventListener('click', function(e){
+    var target = e.target && e.target.closest && e.target.closest('[data-product-buy],[data-product-edit],[data-product-delete],[data-event-register],[data-event-edit],[data-event-delete]');
+    if(!target) return;
+    if(target.dataset.productBuy) orderProduct(target.dataset.productBuy);
+    if(target.dataset.productEdit) openProductSmartForm(target.dataset.productEdit);
+    if(target.dataset.productDelete) deleteProduct(target.dataset.productDelete);
+    if(target.dataset.eventRegister) registerEvent(target.dataset.eventRegister);
+    if(target.dataset.eventEdit) openEventSmartForm(target.dataset.eventEdit);
+    if(target.dataset.eventDelete) deleteEvent(target.dataset.eventDelete);
+  });
+
+  normalizeCloudData();
+  try { renderMarketplace(); renderEvents(); } catch(e) {}
+})();
+</script>
 </body>
 </html>

@@ -22,6 +22,21 @@ const SHEETS = {
   absences:    'Absences',
 };
 
+const SCHEMAS = {
+  Students:             ['id','name','age','belt','plan','parentPin','parentName','parentPhone','parentEmail','sessions','avatar','subscriptionPackage','promotionDate','ugandaNotice','parentId'],
+  Instructors:          ['id','name','role','belt','phone','email','sessions'],
+  Sessions:             ['id','type','day','start','end','instructors','students','notes'],
+  Attendance:           ['id','studentId','studentName','sessionId','sessionName','date','status','scheduledMatch','recordedBy','ts'],
+  InstructorAttendance: ['id','iid','date','ts'],
+  Payments:             ['id','studentId','amount','method','period','date','status','phone','purpose','parentId','confirmedBy','confirmedAt','momoId'],
+  Parents:              ['id','name','phone','email','children','emergencyContact','createdAt'],
+  Wallet:               ['id','ownerId','parentId','studentId','amount','type','purpose','date','ts','staff','notes'],
+  Products:             ['id','name','category','price','stock','desc','sizes','image'],
+  Orders:               ['id','productId','item','studentId','parentId','amount','status','date','paymentStatus'],
+  Events:               ['id','title','date','time','location','fee','deadline','desc','students','status'],
+  Absences:             ['id','studentId','sessionId','date','reason','status','ts'],
+};
+
 // ── CORS helper ──────────────────────────────────────────────
 function setCORSHeaders(output) {
   return output
@@ -97,6 +112,7 @@ function writeAll(data) {
 
 // ── READ SHEET → array of objects ────────────────────────────
 function readSheet(sheetName) {
+  sheetName = resolveSheetName(sheetName);
   const ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sheet = ss.getSheetByName(sheetName);
   if (!sheet) return [];
@@ -108,19 +124,15 @@ function readSheet(sheetName) {
   return values.slice(1).map(row => {
     const obj = {};
     headers.forEach((h, i) => {
-      let val = row[i];
-      // Parse JSON arrays/objects stored as strings
-      if (typeof val === 'string' && (val.startsWith('[') || val.startsWith('{'))) {
-        try { val = JSON.parse(val); } catch (_) {}
-      }
-      obj[h] = val === '' ? null : val;
+      obj[h] = normalizeCellValue(h, row[i]);
     });
     return obj;
-  }).filter(row => row.id); // skip blank rows
+  }).filter(row => Object.values(row).some(v => v !== null && v !== ''));
 }
 
 // ── WRITE FULL SHEET (replaces all data) ─────────────────────
 function writeSheet(sheetName, rows) {
+  sheetName = resolveSheetName(sheetName);
   const ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
   let sheet   = ss.getSheetByName(sheetName);
 
@@ -129,27 +141,22 @@ function writeSheet(sheetName, rows) {
   }
 
   if (!rows || rows.length === 0) {
+    const headers = orderedHeaders(sheetName, []);
+    if (headers.length && sheet.getLastRow() === 0) {
+      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    }
     // Keep headers, clear data
     const lr = sheet.getLastRow();
     if (lr > 1) sheet.getRange(2, 1, lr - 1, sheet.getLastColumn()).clearContent();
     return { ok: true, rows: 0 };
   }
 
-  // Build headers from first object keys
-  const headers = Object.keys(rows[0]);
+  const headers = orderedHeaders(sheetName, rows);
 
-  // Serialize values
   const dataRows = rows.map(row =>
-    headers.map(h => {
-      const v = row[h];
-      if (Array.isArray(v) || (typeof v === 'object' && v !== null)) {
-        return JSON.stringify(v);
-      }
-      return v === null || v === undefined ? '' : v;
-    })
+    headers.map(h => serializeCellValue(row[h]))
   );
 
-  // Clear and rewrite
   sheet.clearContents();
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   if (dataRows.length > 0) {
@@ -164,33 +171,27 @@ function writeSheet(sheetName, rows) {
 
 // ── UPSERT SINGLE ROW (insert or update by id) ───────────────
 function upsertRow(sheetName, rowData) {
+  sheetName = resolveSheetName(sheetName);
   const ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
   let sheet   = ss.getSheetByName(sheetName);
   if (!sheet) sheet = ss.insertSheet(sheetName);
 
   const values  = sheet.getDataRange().getValues();
-  const headers = values[0].map(h => String(h).trim());
+  const existingHeaders = values.length ? values[0].map(h => String(h).trim()).filter(Boolean) : [];
+  const headers = orderedHeaders(sheetName, [rowData], existingHeaders);
+  if (!existingHeaders.length || headers.length !== existingHeaders.length) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  }
   const idCol   = headers.indexOf('id');
 
   if (idCol === -1) {
-    // No headers yet — write them
-    const newHeaders = Object.keys(rowData);
-    sheet.getRange(1, 1, 1, newHeaders.length).setValues([newHeaders]);
-    const newRow = newHeaders.map(h => {
-      const v = rowData[h];
-      return Array.isArray(v) || (typeof v === 'object' && v !== null) ? JSON.stringify(v) : (v ?? '');
-    });
-    sheet.appendRow(newRow);
-    return { ok: true, action: 'inserted' };
+    return { ok: false, error: 'No id column' };
   }
 
   // Search for existing row
   const existingRowIdx = values.findIndex((row, i) => i > 0 && String(row[idCol]) === String(rowData.id));
 
-  const newRow = headers.map(h => {
-    const v = rowData[h];
-    return Array.isArray(v) || (typeof v === 'object' && v !== null) ? JSON.stringify(v) : (v ?? '');
-  });
+  const newRow = headers.map(h => serializeCellValue(rowData[h]));
 
   if (existingRowIdx !== -1) {
     sheet.getRange(existingRowIdx + 1, 1, 1, newRow.length).setValues([newRow]);
@@ -201,8 +202,55 @@ function upsertRow(sheetName, rowData) {
   }
 }
 
+function schemaForSheetName(sheetName) {
+  return SCHEMAS[resolveSheetName(sheetName)] || [];
+}
+
+function resolveSheetName(sheetName) {
+  return SHEETS[sheetName] || sheetName;
+}
+
+function orderedHeaders(sheetName, rows, existingHeaders) {
+  const out = [];
+  function add(header) {
+    const h = String(header || '').trim();
+    if (h && out.indexOf(h) === -1) out.push(h);
+  }
+  schemaForSheetName(sheetName).forEach(add);
+  (existingHeaders || []).forEach(add);
+  (rows || []).forEach(row => Object.keys(row || {}).forEach(add));
+  return out;
+}
+
+function normalizeCellValue(header, val) {
+  if (val === '') return null;
+  if (val instanceof Date) {
+    const key = String(header || '').toLowerCase();
+    const tz = Session.getScriptTimeZone();
+    if (key === 'start' || key === 'end' || key === 'time') {
+      return Utilities.formatDate(val, tz, 'HH:mm');
+    }
+    if (key === 'date' || key === 'deadline' || key === 'promotiondate' || key === 'confirmedat') {
+      return Utilities.formatDate(val, tz, 'yyyy-MM-dd');
+    }
+    return val.toISOString();
+  }
+  if (typeof val === 'string' && (val.startsWith('[') || val.startsWith('{'))) {
+    try { return JSON.parse(val); } catch (_) {}
+  }
+  return val === undefined ? null : val;
+}
+
+function serializeCellValue(v) {
+  if (Array.isArray(v) || (typeof v === 'object' && v !== null)) {
+    return JSON.stringify(v);
+  }
+  return v === null || v === undefined ? '' : v;
+}
+
 // ── DELETE ROW BY ID ─────────────────────────────────────────
 function deleteRow(sheetName, id) {
+  sheetName = resolveSheetName(sheetName);
   const ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sheet = ss.getSheetByName(sheetName);
   if (!sheet) return { ok: false, error: 'Sheet not found' };
@@ -223,22 +271,7 @@ function deleteRow(sheetName, id) {
 function setupSheets() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
 
-  const schema = {
-    Students:             ['id','name','age','belt','plan'],
-    Instructors:          ['id','name','role','belt','phone','email','sessions'],
-    Sessions:             ['id','type','day','start','end','instructors','students','notes'],
-    Attendance:           ['studentId','sessionId','date','ts'],
-    InstructorAttendance: ['iid','date','ts'],
-    Payments:             ['id','studentId','amount','method','period','date','status','phone','purpose','parentId','confirmedBy','confirmedAt'],
-    Parents:              ['id','name','phone','email','children','emergencyContact'],
-    Wallet:               ['id','parentId','studentId','amount','type','purpose','date','ts','staff','notes'],
-    Products:             ['id','name','category','price','stock','desc','sizes','image'],
-    Orders:               ['id','productId','item','studentId','parentId','amount','status','date','paymentStatus'],
-    Events:               ['id','title','date','time','location','fee','deadline','desc','students','status'],
-    Absences:             ['id','studentId','sessionId','date','reason','status','ts'],
-  };
-
-  for (const [name, headers] of Object.entries(schema)) {
+  for (const [name, headers] of Object.entries(SCHEMAS)) {
     let sheet = ss.getSheetByName(name);
     if (!sheet) {
       sheet = ss.insertSheet(name);

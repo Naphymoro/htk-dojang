@@ -1,26 +1,80 @@
-Audit summary
+Han Taekwondo Korea Digital Dojang - audit and repair summary
+Date: 2026-06-02
 
-1. Device sync
-The app was saving roster and attendance data in browser localStorage only. That is why phone and laptop showed different roster counts (for example 8 vs 10). localStorage is per device and cannot synchronize by itself.
+Scope
+- Audited current GitHub Pages app and source for role workflows, visible buttons, cloud sync, mobile scrolling, PWA behavior, and Apps Script data integrity.
+- Tested the deployed Apps Script endpoint with a read-only readAll request.
+- Tested local source syntax for all inline scripts, sw.js, and backend/Code.gs.
+- Render-tested the local app with headless Edge at a 390x844 mobile viewport.
 
-Fix added:
-- Added cloud sync bridge in index.html.
-- Added Settings > Cloud Sync for All Devices.
-- Added Save Sync Settings, Load Cloud Data, and Save This Device to Cloud buttons.
-- Added automatic cloud sync after changes when the Apps Script URL/API key are configured.
-- Updated backend/Code.gs to include Students plus Parents, Wallet, Products, Orders, Events, Absences, Sessions, Attendance, Payments, and Instructors.
+Broken functionality found and fixed
+1. Student Edit action
+- Problem: one patched student table rendered Edit buttons that called openEditStudent(), but only editStudent() existed.
+- Root cause: late runtime patch introduced a renamed click target without an alias.
+- Fix: added window.openEditStudent() as a safe alias to editStudent().
 
-Important: synchronization will only work after deploying backend/Code.gs as a Google Apps Script Web App and entering its URL/API key in app Settings.
+2. Cloud read data loss
+- Problem: backend readSheet() filtered out rows without row.id. Attendance and instructor attendance rows can exist without id, so cloud reads could silently drop attendance history.
+- Root cause: id-only row filter was applied to every sheet schema.
+- Fix: backend now keeps any non-empty row and includes explicit schemas for all app datasets.
 
-2. Vertical scrolling
-The original CSS had several scroll blockers including body overflow hidden, fixed 100vh shells, and inner scroll panels. Parent view was especially affected on mobile because it lived inside a phone-card style container.
+3. Google Sheets date/time normalization
+- Problem: Google Sheets returned times/dates as Date values such as 1899-12-30T17:00:00.000Z, which the UI treated as display/session strings.
+- Root cause: Apps Script read path returned raw Date values and the frontend had no final normalizer for cloud data.
+- Fix: backend normalizes time fields to HH:mm and date fields to yyyy-MM-dd; frontend also normalizes cloud data after sync.
 
-Fix added:
-- Added final CSS override to make the page and parent portal height auto and overflow visible.
-- Removed fixed-height scroll traps for .content, .page, .portal-phone, #portal-phone, and .portal-body.
-- Added mobile-specific padding and one continuous page-scroll behavior.
-- Added runtime forceMobileScroll() to repair inline styles after view changes.
+4. Marketplace workflow gaps
+- Problem: products could be created but not edited/deleted from the visible UI; parent buy buttons could be hidden by role CSS.
+- Root cause: marketplace was implemented as simple cards without admin management actions, and broad role CSS hid primary buttons for parents.
+- Fix: added product edit/delete controls for admin/manager, order listing, stock decrement on order, and parent-visible buy actions.
 
-3. Service worker
-- Cache version bumped to han-tkd-v6-cloud-sync-mobile-scroll.
-- After deploying, open the page once, hard refresh, or clear site data if the old service worker is still serving cached files.
+5. Event workflow gaps
+- Problem: events could be created but not edited/deleted from the visible UI; parent registration actions could be hidden by role CSS.
+- Root cause: event cards lacked edit/delete actions and inherited broad parent button hiding.
+- Fix: added event edit/delete controls for admin/manager and parent-visible register actions.
+
+6. Wallet transaction safety
+- Problem: wallet transactions allowed zero/blank amounts and debits could exceed the balance.
+- Root cause: walletTxn() did not validate amount or available balance.
+- Fix: added amount validation, parent wallet linking checks, and insufficient-funds prevention.
+
+7. PWA stale app shell
+- Problem: service worker used cache-first behavior for the app shell, which could keep serving old index.html after repairs.
+- Root cause: index.html was cached like a static asset.
+- Fix: bumped cache to han-tkd-v7-audit-repair and made navigation/index requests network-first with offline fallback. Apps Script requests remain network-only.
+
+8. Mobile login clipping
+- Problem: a later scroll override could make the auth shell render too wide or too close to the viewport edge on phone-sized captures.
+- Root cause: global scroll repair CSS changed auth overlay layout characteristics.
+- Fix: added final auth-specific viewport constraints and verified the login screen renders fully in a 390x844 Edge screenshot.
+
+Verification completed
+- index.html inline scripts: syntax OK, 6 scripts parsed.
+- sw.js: syntax OK.
+- backend/Code.gs: syntax OK.
+- Required repair hooks present: openEditStudent alias, product/event data-action handlers, cloud normalization, service worker network-first, Apps Script no-id-filter fix.
+- Local HTTP server served repaired index.html and sw.js.
+- Headless Edge screenshot confirmed the mobile auth screen renders with visible right border/rounded corner.
+- Live Apps Script readAll endpoint returned ok:true and cloud datasets.
+
+Cloud sync status
+- Frontend contains Apps Script URL: https://script.google.com/macros/s/AKfycby4n_pA2G-yLKQcls5qW9fIcGqXTiX_F6OQG1WpPn5v7IJe0rTe64eBc6Yipj_5sDBxNg/exec
+- Frontend/API key: HanTKD2026Secure
+- Backend Sheet ID: 1fqJnYBRdNw7HXPkJJcJSg9JXFdQuTkxtBA3CTe-VsdU
+- Read path verified against live endpoint.
+- Write path is repaired in source, but the live Apps Script deployment must be updated with backend/Code.gs before the backend fixes are active in production.
+
+Remaining risks / technical debt
+- The app is a very large single-file HTML application with multiple historical patch blocks. Future fixes should consolidate duplicate render functions and role overrides.
+- Apps Script deployment is separate from GitHub Pages. Pushing this repo does not automatically redeploy the live Apps Script Web App unless a separate Apps Script deployment process is configured.
+- A live write/delete cloud test was not performed during this audit to avoid modifying production sheet data.
+- QR camera scanning still displays an HTTPS readiness state rather than a fully implemented scanner flow.
+
+Final checklist
+- Major visible buttons: repaired known broken handler and added missing management actions.
+- Save/update actions: student, instructor, session, product, event, wallet, payment flows write to APP datasets and trigger cloud auto-sync through APP setters.
+- Parent login: full-register search remains case-insensitive/partial and is backed by synchronized APP.students after cloud load.
+- Cloud synchronization: endpoint reachable; source repaired for read/write integrity; Apps Script redeploy required for backend changes to take effect live.
+- Mobile scrolling: final scroll override retained; mobile auth render verified.
+- PWA installability: manifest remains valid; service worker now avoids stale app-shell caching.
+- Cross-device consistency: frontend is configured to load cloud as source of truth and poll every 30 seconds; backend redeploy is required for full production consistency.

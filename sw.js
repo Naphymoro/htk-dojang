@@ -4,7 +4,7 @@
 // Version: bump CACHE_VERSION to force update on all devices
 // ═══════════════════════════════════════════════════════════════
 
-const CACHE_VERSION  = 'han-tkd-v6-cloud-sync-mobile-scroll';
+const CACHE_VERSION  = 'han-tkd-v7-audit-repair';
 const STATIC_CACHE   = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE  = `${CACHE_VERSION}-dynamic`;
 
@@ -62,7 +62,28 @@ self.addEventListener('fetch', event => {
   // Don't intercept non-GET requests
   if (request.method !== 'GET') return;
 
-  // Cache-first for static assets (fonts, icons, the app itself)
+  // Navigations and the app shell are network-first so deployed fixes are not
+  // hidden behind an old cached index.html.
+  if (
+    request.mode === 'navigate' ||
+    url.pathname.endsWith('/') ||
+    url.pathname.endsWith('/index.html')
+  ) {
+    event.respondWith(
+      fetch(request)
+        .then(networkResponse => {
+          if (networkResponse && networkResponse.status === 200) {
+            const responseClone = networkResponse.clone();
+            caches.open(STATIC_CACHE).then(cache => cache.put(request, responseClone));
+          }
+          return networkResponse;
+        })
+        .catch(() => caches.match(request).then(r => r || caches.match('./index.html') || caches.match('./')))
+    );
+    return;
+  }
+
+  // Cache-first for static assets (fonts, icons)
   event.respondWith(
     caches.match(request).then(cached => {
       if (cached) return cached;
