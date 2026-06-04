@@ -4570,11 +4570,37 @@ setTimeout(requestNotificationPermission, 10000);
     });
     return counts;
   }
+  function getRosterDrawer(){
+    var attPage = document.getElementById('page-attendance');
+    var attendanceActive = attPage && attPage.classList.contains('active');
+    var preferredId = attendanceActive ? 'attendance-roster-drawer' : 'schedule-roster-drawer';
+    return document.getElementById(preferredId) ||
+      document.getElementById('schedule-roster-drawer') ||
+      document.getElementById('attendance-roster-drawer');
+  }
+  function dayForDate(date){
+    return new Date((date || tds()) + 'T12:00:00').toLocaleDateString('en-US', {weekday:'long'});
+  }
+  function sessionsForDate(date){
+    var day = dayForDate(date);
+    var sessions = currentRole === 'instructor' ? getInstructorSessions() : (APP.sessions || []);
+    if(typeof isUmugandaSaturday === 'function' && isUmugandaSaturday(date)){
+      return (typeof UMUGANDA_SESSIONS !== 'undefined' ? UMUGANDA_SESSIONS : []).slice().sort(function(a,b){ return a.start.localeCompare(b.start); });
+    }
+    return sessions.filter(function(sess){ return sess.day === day; }).sort(function(a,b){ return a.start.localeCompare(b.start); });
+  }
   function ensureScheduleAttendanceStyles(){
     if(document.getElementById('interactive-schedule-attendance-style')) return;
     var style = document.createElement('style');
     style.id = 'interactive-schedule-attendance-style';
     style.textContent = '.attendance-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin:10px 0 12px}.attendance-toolbar-left,.attendance-toolbar-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.attendance-date{max-width:150px;padding:8px 10px}.attendance-summary{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 10px}.attendance-roster-card{display:grid;gap:9px}.att-status-options{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}.att-status-chip{border:1px solid var(--border);background:var(--surface);color:var(--muted);border-radius:8px;padding:7px 6px;font-size:11px;font-weight:800;cursor:pointer;transition:all .13s}.att-status-chip:hover{border-color:var(--border2);color:var(--fg)}.att-status-chip.active{background:var(--cg);border-color:rgba(255,30,60,.3);color:var(--white)}.att-status-chip[data-status=\"present\"].active{background:var(--tg);border-color:rgba(0,212,172,.35);color:var(--teal)}.att-status-chip[data-status=\"late\"].active,.att-status-chip[data-status=\"make-up\"].active{background:var(--gg);border-color:rgba(255,184,0,.32);color:var(--gold)}.att-status-chip:disabled{opacity:.55;cursor:not-allowed}.attendance-note{font-size:11.5px;color:var(--muted);line-height:1.45}@media(max-width:640px){.att-status-options{grid-template-columns:1fr 1fr}.attendance-toolbar{align-items:stretch}.attendance-toolbar-left,.attendance-toolbar-actions{width:100%}.attendance-toolbar-actions .sh-btn,.attendance-toolbar-actions .save-btn,.attendance-toolbar-actions .btn-cancel{flex:1}}';
+    document.head.appendChild(style);
+  }
+  function ensureAttendancePageStyles(){
+    if(document.getElementById('attendance-page-schedule-style')) return;
+    var style = document.createElement('style');
+    style.id = 'attendance-page-schedule-style';
+    style.textContent = '.attendance-page-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.attendance-session-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px;margin-bottom:12px}.attendance-session-card{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:9px;cursor:pointer;transition:all .13s;min-height:76px}.attendance-session-card:hover{transform:translateY(-1px);border-color:var(--border2);background:var(--lift)}.attendance-session-main{min-width:0}.attendance-session-type{font-size:11px;font-weight:800;letter-spacing:.8px;text-transform:uppercase;margin-bottom:3px}.attendance-session-time{font-family:\"JetBrains Mono\",monospace;font-size:11px;color:var(--muted)}.attendance-session-meta{display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin-top:8px}.attendance-session-count{text-align:right;min-width:78px}.attendance-session-count strong{display:block;font-family:\"Rajdhani\",sans-serif;font-size:24px;line-height:1;color:var(--fg)}.attendance-session-count span{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}.attendance-session-card.slot-ld .attendance-session-type{color:var(--purple)}.attendance-session-card.slot-kid .attendance-session-type{color:var(--gold)}.attendance-session-card.slot-ta .attendance-session-type{color:var(--blue)}.attendance-session-card.slot-spar .attendance-session-type{color:var(--crimson)}.attendance-session-card.slot-women .attendance-session-type{color:var(--teal)}@media(max-width:640px){.attendance-page-tools{width:100%}.attendance-page-tools .attendance-date{flex:1;max-width:none}.attendance-session-grid{grid-template-columns:1fr}}';
     document.head.appendChild(style);
   }
   function iconMarkup(type){
@@ -4605,7 +4631,7 @@ setTimeout(requestNotificationPermission, 10000);
   }
 
   window.setRosterAttendanceStatus = function(sessId, studentId, status){
-    var drawer = document.getElementById('schedule-roster-drawer');
+    var drawer = getRosterDrawer();
     if(!drawer || !canUseScheduleAttendance()) return;
     var card = [].slice.call(drawer.querySelectorAll('[data-att-student-id]')).find(function(item){
       return item.dataset.attStudentId === studentId;
@@ -4615,7 +4641,7 @@ setTimeout(requestNotificationPermission, 10000);
 
   window.markAllScheduleAttendance = function(sessId, status){
     if(!canUseScheduleAttendance()) return;
-    var drawer = document.getElementById('schedule-roster-drawer');
+    var drawer = getRosterDrawer();
     if(!drawer) return;
     [].slice.call(drawer.querySelectorAll('[data-att-student-id]')).forEach(function(card){
       updateCardStatus(card, status || 'present');
@@ -4624,7 +4650,7 @@ setTimeout(requestNotificationPermission, 10000);
 
   window.clearScheduleAttendance = function(sessId){
     if(!canUseScheduleAttendance()) return;
-    var drawer = document.getElementById('schedule-roster-drawer');
+    var drawer = getRosterDrawer();
     if(!drawer) return;
     [].slice.call(drawer.querySelectorAll('[data-att-student-id]')).forEach(function(card){
       updateCardStatus(card, '');
@@ -4634,7 +4660,7 @@ setTimeout(requestNotificationPermission, 10000);
   window.saveScheduleAttendance = function(sessId){
     if(!canUseScheduleAttendance()){ showToast('Attendance access required', 'err'); return; }
     var sess = findSession(sessId);
-    var drawer = document.getElementById('schedule-roster-drawer');
+    var drawer = getRosterDrawer();
     if(!sess || !drawer){ showToast('Session not found', 'err'); return; }
     var date = (document.getElementById('schedule-att-date') || {}).value || tds();
     var cards = [].slice.call(drawer.querySelectorAll('[data-att-student-id]'));
@@ -4717,9 +4743,49 @@ setTimeout(requestNotificationPermission, 10000);
     }
   };
 
+  if(typeof PM !== 'undefined' && PM.attendance) PM.attendance[1] = 'Session Attendance';
+
+  function renderAttendanceSessionGrid(date){
+    var grid = document.getElementById('attendance-session-grid');
+    if(!grid) return;
+    var sessions = sessionsForDate(date);
+    if(!sessions.length){
+      grid.innerHTML = '<div class="smart-note">No sessions scheduled for '+htmlEscape(dayForDate(date))+'.</div>';
+      return;
+    }
+    grid.innerHTML = sessions.map(function(sess){
+      var meta = TM[sess.type] || TM.kid;
+      var roster = rosterForSession(sess);
+      var counts = attendanceCounts(sess.id, date);
+      var counted = (counts.present || 0) + (counts.late || 0) + (counts['make-up'] || 0);
+      var absent = counts.absent || 0;
+      var marked = counted + absent;
+      return '<div class="attendance-session-card '+meta.cls+'" onclick="openScheduleRoster(\''+htmlEscape(sess.id)+'\',\''+htmlEscape(date)+'\')" role="button" tabindex="0" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();openScheduleRoster(\''+htmlEscape(sess.id)+'\',\''+htmlEscape(date)+'\')}"><div class="attendance-session-main"><div class="attendance-session-type">'+htmlEscape(meta.label || sess.type)+'</div><div class="attendance-session-time">'+htmlEscape(sess.start)+'-'+htmlEscape(sess.end)+'</div><div class="attendance-session-meta"><span class="pill '+meta.badge+'">'+htmlEscape(roster.length)+' roster</span><span class="pill p-green">'+htmlEscape(counted)+' present</span><span class="pill p-red">'+htmlEscape(absent)+' absent</span></div></div><div class="attendance-session-count"><strong>'+htmlEscape(marked)+'</strong><span>marked</span></div></div>';
+    }).join('');
+  }
+
+  var previousRenderAttViewForScheduleAttendance = window.renderAttView || (typeof renderAttView === 'function' ? renderAttView : null);
+  window.renderAttView = function(){
+    ensureScheduleAttendanceStyles();
+    ensureAttendancePageStyles();
+    var page = document.getElementById('page-attendance');
+    if(!page){
+      if(previousRenderAttViewForScheduleAttendance) previousRenderAttViewForScheduleAttendance();
+      return;
+    }
+    var currentDate = (document.getElementById('att-session-date') || {}).value || tds();
+    page.innerHTML = '<div class="sh"><span class="sh-title">Session Attendance</span><div class="attendance-page-tools"><span class="pb-lbl">Date</span><input class="form-input attendance-date" id="att-session-date" type="date" value="'+htmlEscape(currentDate)+'" onchange="renderAttView()"><button class="sh-btn" onclick="document.getElementById(\'att-session-date\').value=tds();renderAttView()">Today</button></div></div><div class="attendance-session-grid" id="attendance-session-grid"></div><div class="feature-drawer" id="attendance-roster-drawer"></div><div class="sh" style="margin-top:16px"><span class="sh-title">Reported Absences</span><span id="abs-pending-badge" style="display:none" class="nav-badge">0</span></div><div id="reported-absences-list" style="display:flex;flex-direction:column;gap:6px"></div>';
+    renderAttendanceSessionGrid(currentDate);
+    try{ renderAbsences(); }catch(e){}
+    var tbSub = document.getElementById('tb-sub');
+    if(tbSub && page.classList.contains('active')) tbSub.textContent = 'Session Attendance';
+    try{ applyUIRestrictions(currentRole); }catch(e){}
+  };
+
   window.openScheduleRoster = function(sessId, selectedDate){
     ensureScheduleAttendanceStyles();
-    var drawer = document.getElementById('schedule-roster-drawer');
+    ensureAttendancePageStyles();
+    var drawer = getRosterDrawer();
     if(!drawer) return;
     var sess = findSession(sessId);
     if(!sess) return;
@@ -4750,7 +4816,7 @@ setTimeout(requestNotificationPermission, 10000);
   };
 
   setTimeout(function(){
-    try{ renderSchedule(); renderDashboard(); }catch(e){}
+    try{ renderSchedule(); renderDashboard(); if(document.getElementById('page-attendance')?.classList.contains('active')) renderAttView(); }catch(e){}
   }, 100);
 })();
 </script>
