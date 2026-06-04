@@ -4360,7 +4360,7 @@ setTimeout(requestNotificationPermission, 10000);
     var students = currentRole === 'instructor' ? getInstructorStudents() : APP.students;
     var manage = isManageRole();
     body.innerHTML = (students || []).map(function(st){
-      var cnt = (APP.attendance || []).filter(function(a){ return a.studentId === st.id && String(a.date || '').startsWith(mths()); }).length;
+      var cnt = (APP.attendance || []).filter(function(a){ return a.studentId === st.id && String(a.date || '').startsWith(mths()) && (a.status || 'present') !== 'absent'; }).length;
       var req = (st.plan || 1) * 4;
       var pct = req ? Math.round(cnt / req * 100) : 0;
       var ps = typeof paymentState === 'function' ? paymentState(st) : {status:'active'};
@@ -4519,6 +4519,239 @@ setTimeout(requestNotificationPermission, 10000);
     refreshBeltSelects();
     refreshManagementViews();
   }, 120);
+})();
+</script>
+<script id="interactive-schedule-attendance-patch">
+(function(){
+  var ATTENDANCE_STATUSES = [
+    {value:'present', label:'Present', cls:'p-green'},
+    {value:'absent', label:'Absent', cls:'p-red'},
+    {value:'late', label:'Late', cls:'p-gold'},
+    {value:'make-up', label:'Make-up', cls:'p-blue'}
+  ];
+
+  function canUseScheduleAttendance(){
+    return currentRole === 'admin' || currentRole === 'manager' || currentRole === 'instructor';
+  }
+  function isManagerRole(){
+    return currentRole === 'admin' || currentRole === 'manager';
+  }
+  function htmlEscape(value){
+    return String(value == null ? '' : value).replace(/[&<>"']/g, function(ch){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];
+    });
+  }
+  function normalizeStatus(status){
+    status = String(status || '').toLowerCase();
+    return ATTENDANCE_STATUSES.some(function(item){ return item.value === status; }) ? status : '';
+  }
+  function statusMeta(status){
+    status = normalizeStatus(status);
+    return ATTENDANCE_STATUSES.find(function(item){ return item.value === status; }) || {value:'', label:'Not marked', cls:'p-red'};
+  }
+  function findSession(sessId){
+    return (APP.sessions || []).find(function(s){ return s.id === sessId; }) ||
+      ((typeof UMUGANDA_SESSIONS !== 'undefined' ? UMUGANDA_SESSIONS : []).find(function(s){ return s.id === sessId; }));
+  }
+  function rosterForSession(sess){
+    return (APP.students || []).filter(function(st){ return isStudentScheduled(st, sess); });
+  }
+  function sessionAttendanceRecord(studentId, sessionId, date){
+    return (APP.attendance || []).find(function(a){
+      return a.studentId === studentId && a.sessionId === sessionId && a.date === date;
+    }) || null;
+  }
+  function attendanceCounts(sessionId, date){
+    var counts = {present:0, absent:0, late:0, 'make-up':0};
+    (APP.attendance || []).forEach(function(a){
+      if(a.sessionId !== sessionId || a.date !== date) return;
+      var status = normalizeStatus(a.status || 'present') || 'present';
+      counts[status] = (counts[status] || 0) + 1;
+    });
+    return counts;
+  }
+  function ensureScheduleAttendanceStyles(){
+    if(document.getElementById('interactive-schedule-attendance-style')) return;
+    var style = document.createElement('style');
+    style.id = 'interactive-schedule-attendance-style';
+    style.textContent = '.attendance-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin:10px 0 12px}.attendance-toolbar-left,.attendance-toolbar-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.attendance-date{max-width:150px;padding:8px 10px}.attendance-summary{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 10px}.attendance-roster-card{display:grid;gap:9px}.att-status-options{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}.att-status-chip{border:1px solid var(--border);background:var(--surface);color:var(--muted);border-radius:8px;padding:7px 6px;font-size:11px;font-weight:800;cursor:pointer;transition:all .13s}.att-status-chip:hover{border-color:var(--border2);color:var(--fg)}.att-status-chip.active{background:var(--cg);border-color:rgba(255,30,60,.3);color:var(--white)}.att-status-chip[data-status=\"present\"].active{background:var(--tg);border-color:rgba(0,212,172,.35);color:var(--teal)}.att-status-chip[data-status=\"late\"].active,.att-status-chip[data-status=\"make-up\"].active{background:var(--gg);border-color:rgba(255,184,0,.32);color:var(--gold)}.att-status-chip:disabled{opacity:.55;cursor:not-allowed}.attendance-note{font-size:11.5px;color:var(--muted);line-height:1.45}@media(max-width:640px){.att-status-options{grid-template-columns:1fr 1fr}.attendance-toolbar{align-items:stretch}.attendance-toolbar-left,.attendance-toolbar-actions{width:100%}.attendance-toolbar-actions .sh-btn,.attendance-toolbar-actions .save-btn,.attendance-toolbar-actions .btn-cancel{flex:1}}';
+    document.head.appendChild(style);
+  }
+  function iconMarkup(type){
+    if(type === 'edit') return '<svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>';
+    return '';
+  }
+  function editSessionButton(sessId){
+    if(!isManagerRole()) return '';
+    return '<button class="sh-btn icon-action admin-only" onclick="openEditSess(\''+htmlEscape(sessId)+'\')" title="Edit session" aria-label="Edit session">'+iconMarkup('edit')+'</button>';
+  }
+  function statusButtons(sessId, studentId, selected, disabled){
+    return ATTENDANCE_STATUSES.map(function(item){
+      return '<button type="button" class="att-status-chip '+(selected === item.value ? 'active' : '')+'" data-status="'+item.value+'" onclick="setRosterAttendanceStatus(\''+htmlEscape(sessId)+'\',\''+htmlEscape(studentId)+'\',\''+item.value+'\')" '+(disabled ? 'disabled' : '')+'>'+item.label+'</button>';
+    }).join('');
+  }
+  function updateCardStatus(card, status){
+    status = normalizeStatus(status);
+    card.dataset.status = status;
+    card.querySelectorAll('.att-status-chip').forEach(function(btn){
+      btn.classList.toggle('active', btn.dataset.status === status);
+    });
+    var pill = card.querySelector('[data-att-status-pill]');
+    if(pill){
+      var meta = statusMeta(status);
+      pill.className = 'pill ' + meta.cls;
+      pill.textContent = meta.label;
+    }
+  }
+
+  window.setRosterAttendanceStatus = function(sessId, studentId, status){
+    var drawer = document.getElementById('schedule-roster-drawer');
+    if(!drawer || !canUseScheduleAttendance()) return;
+    var card = [].slice.call(drawer.querySelectorAll('[data-att-student-id]')).find(function(item){
+      return item.dataset.attStudentId === studentId;
+    });
+    if(card) updateCardStatus(card, status);
+  };
+
+  window.markAllScheduleAttendance = function(sessId, status){
+    if(!canUseScheduleAttendance()) return;
+    var drawer = document.getElementById('schedule-roster-drawer');
+    if(!drawer) return;
+    [].slice.call(drawer.querySelectorAll('[data-att-student-id]')).forEach(function(card){
+      updateCardStatus(card, status || 'present');
+    });
+  };
+
+  window.clearScheduleAttendance = function(sessId){
+    if(!canUseScheduleAttendance()) return;
+    var drawer = document.getElementById('schedule-roster-drawer');
+    if(!drawer) return;
+    [].slice.call(drawer.querySelectorAll('[data-att-student-id]')).forEach(function(card){
+      updateCardStatus(card, '');
+    });
+  };
+
+  window.saveScheduleAttendance = function(sessId){
+    if(!canUseScheduleAttendance()){ showToast('Attendance access required', 'err'); return; }
+    var sess = findSession(sessId);
+    var drawer = document.getElementById('schedule-roster-drawer');
+    if(!sess || !drawer){ showToast('Session not found', 'err'); return; }
+    var date = (document.getElementById('schedule-att-date') || {}).value || tds();
+    var cards = [].slice.call(drawer.querySelectorAll('[data-att-student-id]'));
+    var rosterIds = new Set(cards.map(function(card){ return card.dataset.attStudentId; }));
+    var next = (APP.attendance || []).filter(function(a){
+      return !(a.sessionId === sessId && a.date === date && rosterIds.has(a.studentId));
+    });
+    var saved = 0;
+    cards.forEach(function(card, index){
+      var status = normalizeStatus(card.dataset.status);
+      if(!status) return;
+      var st = (APP.students || []).find(function(s){ return s.id === card.dataset.attStudentId; });
+      if(!st) return;
+      next.push({
+        id:'a'+Date.now()+'-'+index,
+        studentId:st.id,
+        studentName:st.name || '',
+        sessionId:sessId,
+        sessionName:sessionLabel(sess),
+        date:date,
+        status:status,
+        scheduledMatch:isStudentScheduled(st, sess),
+        recordedBy:currentRole || 'system',
+        ts:Date.now()
+      });
+      saved++;
+    });
+    APP.attendance = next;
+    try{ renderAttView(); }catch(e){}
+    try{ renderDashboard(); }catch(e){}
+    try{ renderStudents(); }catch(e){}
+    try{ renderPortal(); }catch(e){}
+    try{ renderSchedule(); }catch(e){}
+    openScheduleRoster(sessId, date);
+    showToast(saved ? 'Attendance saved for '+saved+' student'+(saved === 1 ? '' : 's') : 'Attendance cleared for this session', saved ? 'ok' : 'gold');
+  };
+
+  var previousMarkAtt = window.markAtt || (typeof markAtt === 'function' ? markAtt : null);
+  window.markAtt = function(sid, status){
+    status = normalizeStatus(status || 'present') || 'present';
+    var sessId = (document.getElementById('att-sess-sel') || {}).value;
+    if(!sessId){ showToast('Select a session first', 'err'); return; }
+    var st = (APP.students || []).find(function(x){ return x.id === sid; });
+    var sess = findSession(sessId);
+    var scheduled = isStudentScheduled(st, sess);
+    if(!scheduled && status !== 'make-up'){
+      showToast('This child is not scheduled. Use make-up confirmation.', 'gold');
+      try{ searchAtt((document.getElementById('att-search-inp') || {}).value || ''); }catch(e){}
+      return;
+    }
+    var att = (APP.attendance || []).filter(function(a){
+      return !(a.studentId === sid && a.date === tds() && a.sessionId === sessId);
+    });
+    att.push({
+      id:'a'+Date.now(),
+      studentId:sid,
+      studentName:st && st.name || '',
+      sessionId:sessId,
+      sessionName:sessionLabel(sess),
+      date:tds(),
+      status:status,
+      scheduledMatch:scheduled,
+      recordedBy:currentRole,
+      ts:Date.now()
+    });
+    APP.attendance = att;
+    try{ searchAtt((document.getElementById('att-search-inp') || {}).value || ''); }catch(e){}
+    try{ renderAttView(); renderDashboard(); renderStudents(); renderPortal(); }catch(e){}
+    showToast((st && st.name || 'Student') + ' marked ' + status);
+  };
+
+  var previousRenderDashboardForAttendance = window.renderDashboard || (typeof renderDashboard === 'function' ? renderDashboard : null);
+  window.renderDashboard = function(){
+    if(previousRenderDashboardForAttendance) previousRenderDashboardForAttendance();
+    var todayCount = document.getElementById('mv-att');
+    if(todayCount){
+      todayCount.textContent = (APP.attendance || []).filter(function(a){
+        return a.date === tds() && (a.status || 'present') !== 'absent';
+      }).length;
+    }
+  };
+
+  window.openScheduleRoster = function(sessId, selectedDate){
+    ensureScheduleAttendanceStyles();
+    var drawer = document.getElementById('schedule-roster-drawer');
+    if(!drawer) return;
+    var sess = findSession(sessId);
+    if(!sess) return;
+    var roster = rosterForSession(sess);
+    var date = selectedDate || tds();
+    var canMark = canUseScheduleAttendance();
+    var counts = attendanceCounts(sessId, date);
+    drawer.classList.add('show');
+    var headerActions = editSessionButton(sess.id) + '<button class="btn-cancel" onclick="this.closest(\'.feature-drawer\').classList.remove(\'show\')">Close</button>';
+    var toolbar = canMark ? '<div class="attendance-toolbar"><div class="attendance-toolbar-left"><span class="pb-lbl">Attendance date</span><input class="form-input attendance-date" id="schedule-att-date" type="date" value="'+htmlEscape(date)+'" onchange="openScheduleRoster(\''+htmlEscape(sess.id)+'\',this.value)"></div><div class="attendance-toolbar-actions"><button class="sh-btn primary" onclick="markAllScheduleAttendance(\''+htmlEscape(sess.id)+'\',\'present\')">Mark all present</button><button class="btn-cancel" onclick="clearScheduleAttendance(\''+htmlEscape(sess.id)+'\')">Clear</button><button class="save-btn" onclick="saveScheduleAttendance(\''+htmlEscape(sess.id)+'\')">Save attendance</button></div></div>' : '<div class="smart-note">Attendance controls are available to Admin, Manager, and Instructor roles.</div>';
+    var summary = '<div class="attendance-summary">'+ATTENDANCE_STATUSES.map(function(item){ return '<span class="pill '+item.cls+'">'+item.label+': '+(counts[item.value] || 0)+'</span>'; }).join('')+'</div>';
+    drawer.innerHTML = '<div class="smart-form-head"><span class="smart-form-title">'+htmlEscape(sessionLabel(sess))+' - '+roster.length+' students</span><div style="display:flex;gap:6px;align-items:center">'+headerActions+'</div></div>'+toolbar+summary+
+      '<div class="roster-grid">'+(roster.length ? roster.map(function(st){
+        var ps = typeof paymentState === 'function' ? paymentState(st) : {status:'active'};
+        var record = sessionAttendanceRecord(st.id, sess.id, date);
+        var status = normalizeStatus(record && record.status || '');
+        var meta = statusMeta(status);
+        var monthAtt = (APP.attendance || []).filter(function(a){ return a.studentId === st.id && String(a.date || '').startsWith(mths()) && (a.status || 'present') !== 'absent'; }).length;
+        return '<div class="roster-card attendance-roster-card" data-att-student-id="'+htmlEscape(st.id)+'" data-status="'+htmlEscape(status)+'"><div style="display:flex;gap:10px;align-items:center"><div class="avatar-sm">'+initials(st.name)+'</div><div><div style="font-weight:800;color:var(--fg)">'+htmlEscape(st.name)+'</div><div style="font-size:11px;color:var(--muted)">'+htmlEscape(st.age)+' yrs - '+htmlEscape(st.belt)+'</div></div></div><div class="profile-line"><span>Payment</span><span class="pill '+(ps.status === 'paid' ? 'p-green' : ps.status === 'wallet-funded' ? 'p-teal' : 'p-red')+'">'+htmlEscape(ps.status || 'active')+'</span></div><div class="profile-line"><span>Status</span><span class="pill '+meta.cls+'" data-att-status-pill>'+meta.label+'</span></div><div class="att-status-options" role="radiogroup" aria-label="Attendance status for '+htmlEscape(st.name)+'">'+statusButtons(sess.id, st.id, status, !canMark)+'</div><div class="attendance-note">This month: '+monthAtt+'/'+((st.plan || 1) * 4)+' counted sessions</div><div style="display:flex;gap:6px;flex-wrap:wrap"><button class="sh-btn" onclick="switchView(\'parent\');document.getElementById(\'portal-sel\').value=\''+htmlEscape(st.id)+'\';renderPortal()">Profile</button></div></div>';
+      }).join('') : '<div class="smart-note">No students are assigned to this session yet.</div>')+'</div>';
+    if(isManagerRole()){
+      var assigned = new Set(roster.map(function(st){ return st.id; }));
+      var candidates = (APP.students || []).filter(function(st){ return !assigned.has(st.id) && isSessionAgeEligible(st.age, sess); });
+      drawer.insertAdjacentHTML('beforeend','<div class="parent-profile-card admin-only" style="margin-top:12px"><div class="pb-lbl">Assign student to this session</div>'+(candidates.length ? '<div class="form-2"><select class="form-input" id="schedule-assign-student">'+candidates.map(function(st){ return '<option value="'+htmlEscape(st.id)+'">'+htmlEscape(st.name)+' - age '+htmlEscape(st.age)+' - '+htmlEscape(st.belt)+'</option>'; }).join('')+'</select><button class="save-btn" onclick="assignStudentToSessionFromSchedule(\''+htmlEscape(sess.id)+'\')">Assign</button></div>' : '<div class="smart-note">All age-eligible students are already assigned to this session.</div>')+'</div>');
+    }
+    drawer.scrollIntoView({behavior:'smooth', block:'start'});
+    try{ applyUIRestrictions(currentRole); }catch(e){}
+  };
+
+  setTimeout(function(){
+    try{ renderSchedule(); renderDashboard(); }catch(e){}
+  }, 100);
 })();
 </script>
 </body>
