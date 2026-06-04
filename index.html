@@ -727,7 +727,7 @@ body{display:block!important;position:static!important;touch-action:auto!importa
       </div>
     </div>
     <div class="modal-actions">
-      <button class="btn-delete" id="btn-del-sess" style="display:none" onclick="deleteSession()">Delete</button>
+      <button class="btn-delete icon-action danger" id="btn-del-sess" style="display:none" onclick="deleteSession()" title="Delete session" aria-label="Delete session"><svg viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 18h10l1-18"/><path d="M10 11v6M14 11v6"/></svg></button>
       <button class="btn-cancel" onclick="closeModal('sessionModal')">Cancel</button>
       <button class="save-btn" onclick="saveSession()"><svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>Save</button>
     </div>
@@ -758,7 +758,7 @@ body{display:block!important;position:static!important;touch-action:auto!importa
       </div>
     </div>
     <div class="modal-actions">
-      <button class="btn-delete" id="btn-del-instr" style="display:none" onclick="deleteInstructor()">Delete</button>
+      <button class="btn-delete icon-action danger" id="btn-del-instr" style="display:none" onclick="deleteInstructor()" title="Delete instructor" aria-label="Delete instructor"><svg viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 18h10l1-18"/><path d="M10 11v6M14 11v6"/></svg></button>
       <button class="btn-cancel" onclick="closeModal('instrModal')">Cancel</button>
       <button class="save-btn" onclick="saveInstructor()"><svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>Save</button>
     </div>
@@ -4116,6 +4116,32 @@ setTimeout(requestNotificationPermission, 10000);
       return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];
     });
   }
+  function ensureIconActionStyles(){
+    if(document.getElementById('icon-action-controls-style')) return;
+    var style = document.createElement('style');
+    style.id = 'icon-action-controls-style';
+    style.textContent = '.icon-action{width:30px!important;height:30px!important;min-width:30px!important;padding:0!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;border-radius:8px!important;line-height:1!important}.icon-action svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}.icon-action.danger{color:var(--crimson);border-color:rgba(255,30,60,.25)}.icon-action.danger:hover{background:var(--crimson);color:#fff}.audit-action-row .icon-action,.ic-actions .icon-action{flex:0 0 30px!important}';
+    document.head.appendChild(style);
+  }
+  function iconSvg(type){
+    if(type === 'edit') return '<svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>';
+    return '<svg viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 18h10l1-18"/><path d="M10 11v6M14 11v6"/></svg>';
+  }
+  function iconButton(type, label, attrs, extraClass){
+    return '<button class="sh-btn icon-action '+(type === 'trash' ? 'danger ' : '')+(extraClass || '')+'" title="'+esc(label)+'" aria-label="'+esc(label)+'" '+(attrs || '')+'>'+iconSvg(type)+'</button>';
+  }
+  function normalizeDateLocal(value){
+    if(!value) return '';
+    var s = String(value);
+    if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    var d = new Date(s);
+    return isNaN(d.getTime()) ? s : d.toISOString().slice(0,10);
+  }
+  function asArrayLocal(value){
+    if(Array.isArray(value)) return value;
+    if(!value) return [];
+    return String(value).split(/[|,;]/).map(function(v){ return v.trim(); }).filter(Boolean);
+  }
   function beltClassFor(name, cls){
     if(cls) return cls;
     var n = String(name || '').toLowerCase();
@@ -4174,6 +4200,7 @@ setTimeout(requestNotificationPermission, 10000);
   }
 
   installCustomBelts();
+  ensureIconActionStyles();
 
   var previousApplyUIRestrictions = window.applyUIRestrictions || (typeof applyUIRestrictions === 'function' ? applyUIRestrictions : null);
   window.applyUIRestrictions = function(role){
@@ -4195,6 +4222,23 @@ setTimeout(requestNotificationPermission, 10000);
     try{ applyUIRestrictions(currentRole); }catch(e){}
     return result;
   };
+
+  var previousOpenScheduleRosterForIcons = window.openScheduleRoster || (typeof openScheduleRoster === 'function' ? openScheduleRoster : null);
+  if(previousOpenScheduleRosterForIcons){
+    window.openScheduleRoster = function(sessId){
+      previousOpenScheduleRosterForIcons(sessId);
+      var drawer = document.getElementById('schedule-roster-drawer');
+      if(!drawer) return;
+      [].slice.call(drawer.querySelectorAll('button')).forEach(function(btn){
+        if((btn.textContent || '').trim().toLowerCase() === 'edit session'){
+          btn.classList.add('icon-action');
+          btn.innerHTML = iconSvg('edit');
+          btn.title = 'Edit session';
+          btn.setAttribute('aria-label', 'Edit session');
+        }
+      });
+    };
+  }
 
   var previousOpenStudentForm = window.openStudentForm || (typeof openStudentForm === 'function' ? openStudentForm : null);
   if(previousOpenStudentForm){
@@ -4323,7 +4367,7 @@ setTimeout(requestNotificationPermission, 10000);
       var monthly = window.monthlyFeeForPlan ? window.monthlyFeeForPlan(st.plan) : ((Number(APP.lessonFee || 0) || 0) * (st.plan || 1));
       var sessions = typeof childSessionLine === 'function' ? childSessionLine(st) : '';
       var actions = manage
-        ? '<button class="sh-btn" onclick="openEditStudent(\''+esc(st.id)+'\')">Edit</button> <button class="sh-btn primary" onclick="assignStudentSessions(\''+esc(st.id)+'\')">Assign Session</button> <button class="sh-btn" onclick="switchView(\'parent\');document.getElementById(\'portal-sel\').value=\''+esc(st.id)+'\';renderPortal()">Profile</button> <button class="btn-delete" style="padding:4px 10px;font-size:11px" onclick="deleteStudent(\''+esc(st.id)+'\')">Delete</button>'
+        ? iconButton('edit','Edit student','onclick="openEditStudent(\''+esc(st.id)+'\')"')+' <button class="sh-btn primary" onclick="assignStudentSessions(\''+esc(st.id)+'\')">Assign Session</button> <button class="sh-btn" onclick="switchView(\'parent\');document.getElementById(\'portal-sel\').value=\''+esc(st.id)+'\';renderPortal()">Profile</button> '+iconButton('trash','Delete student','onclick="deleteStudent(\''+esc(st.id)+'\')"')
         : '<button class="sh-btn" onclick="switchView(\'parent\');document.getElementById(\'portal-sel\').value=\''+esc(st.id)+'\';renderPortal()">Profile</button>';
       return '<tr><td class="nm">'+esc(st.name)+'</td><td>'+esc(st.age)+' yrs<br><span style="font-size:10.5px;color:var(--muted)">'+sessions+'</span></td><td><span class="belt '+(BC[st.belt] || 'b-white')+'"><span class="belt-sw"></span>'+esc(st.belt)+'</span></td><td>'+esc(st.plan)+'/week</td><td>'+sessions+'</td><td class="mono" title="'+(window.formatRwf ? window.formatRwf(monthly) : monthly)+'">'+(window.formatRwfCompact ? window.formatRwfCompact(monthly) : Number(monthly || 0).toLocaleString())+'</td><td>'+cnt+'/'+req+' - '+pct+'%</td><td><span class="pill '+(ps.status === 'paid' ? 'p-green' : ps.status === 'wallet-funded' ? 'p-teal' : 'p-red')+'">'+esc(ps.status || 'active')+'</span></td><td><div style="display:flex;gap:5px;flex-wrap:wrap">'+actions+'</div></td></tr>';
     }).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--dim);padding:14px">No students</td></tr>';
@@ -4343,7 +4387,7 @@ setTimeout(requestNotificationPermission, 10000);
         var mCnt = ia.filter(function(a){ return a.iid === instr.id && String(a.date || '').startsWith(mths()); }).length;
         var tot = ia.filter(function(a){ return a.iid === instr.id; }).length;
         var init = String(instr.name || '').split(' ').map(function(w){ return w[0] || ''; }).slice(0,2).join('');
-        var manageActions = manage ? '<button class="sh-btn" style="padding:4px 10px;font-size:11px;flex:1" onclick="openEditInstr(\''+esc(instr.id)+'\')">Edit</button><button class="btn-delete" style="padding:4px 10px;font-size:11px" onclick="deleteInstructor(\''+esc(instr.id)+'\')">Delete</button>' : '';
+        var manageActions = manage ? iconButton('edit','Edit instructor','onclick="openEditInstr(\''+esc(instr.id)+'\')"')+iconButton('trash','Delete instructor','onclick="deleteInstructor(\''+esc(instr.id)+'\')"') : '';
         return '<div class="ic"><div class="ic-header"><div class="ic-av">'+esc(init)+'</div><div><div class="ic-name">'+esc(instr.name)+'</div><div class="ic-role">'+esc(instr.role)+'</div></div></div><div class="ic-stats"><div class="ic-stat"><div class="ic-stat-val">'+mCnt+'</div><div class="ic-stat-lbl">This month</div></div><div class="ic-stat"><div class="ic-stat-val">'+tot+'</div><div class="ic-stat-lbl">Total sessions</div></div></div><div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:9px"><span class="belt '+(BC[instr.belt] || 'b-black')+'"><span class="belt-sw"></span>'+esc(instr.belt)+'</span><span class="pill p-green">Active</span></div>'+((instr.sessions || []).length ? '<div class="ic-sess-list">'+(instr.sessions || []).slice(0,3).map(function(s){ return '<div class="ic-sess-tag">'+esc(s)+'</div>'; }).join('')+((instr.sessions || []).length > 3 ? '<div style="font-size:9.5px;color:var(--dim);padding:2px 0">+'+((instr.sessions || []).length - 3)+' more</div>' : '')+'</div>' : '')+'<div class="ic-actions">'+manageActions+'<button class="sh-btn primary" style="padding:4px 10px;font-size:11px" onclick="markInstrAtt(\''+esc(instr.id)+'\')">Present</button></div></div>';
       }).join('') || '<div style="color:var(--muted);font-size:12.5px;padding:8px 0">No instructors added yet</div>';
     }
@@ -4354,7 +4398,7 @@ setTimeout(requestNotificationPermission, 10000);
         var mCnt = ia2.filter(function(a){ return String(a.date || '').startsWith(mths()); }).length;
         var tot = ia2.length;
         var last = ia2.length ? ia2.slice(-1)[0].date : 'Never';
-        var actions = manage ? '<button class="sh-btn" style="padding:3px 8px;font-size:11px" onclick="openEditInstr(\''+esc(instr.id)+'\')">Edit</button> <button class="btn-delete" style="padding:3px 8px;font-size:11px" onclick="deleteInstructor(\''+esc(instr.id)+'\')">Delete</button>' : '-';
+        var actions = manage ? iconButton('edit','Edit instructor','onclick="openEditInstr(\''+esc(instr.id)+'\')"')+' '+iconButton('trash','Delete instructor','onclick="deleteInstructor(\''+esc(instr.id)+'\')"') : '-';
         return '<tr><td class="nm">'+esc(instr.name)+'</td><td><span class="belt '+(BC[instr.belt] || 'b-black')+'"><span class="belt-sw"></span>'+esc(instr.belt)+'</span></td><td><span class="pill p-teal">'+mCnt+' sessions</span></td><td class="mono">'+tot+'</td><td class="mono">'+esc(last)+'</td><td style="max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc((instr.sessions || []).slice(0,2).join(', ') || '-')+((instr.sessions || []).length > 2 ? ' +'+((instr.sessions || []).length - 2) : '')+'</td><td>'+actions+'</td></tr>';
       }).join('');
     }
@@ -4375,9 +4419,35 @@ setTimeout(requestNotificationPermission, 10000);
     var plans = ['-','1x/wk','2x/wk','3x/wk'];
     body.innerHTML = payments.length ? payments.slice().reverse().map(function(p){
       var st = students.find(function(s){ return s.id === p.studentId; });
-      return '<tr><td class="nm">'+esc(st && st.name || '-')+'</td><td>'+esc(p.period || '')+'</td><td><span class="pill p-blue">'+esc(plans[Number(st && st.plan || 1)] || '1x/wk')+'</span></td><td class="mono">'+Number(p.amount || 0).toLocaleString()+'</td><td>'+esc(p.method || '')+'</td><td class="mono">'+esc(p.date || '')+'</td><td><span class="pill '+(p.status === 'paid' ? 'p-green' : 'p-red')+'">'+esc(p.status || '')+'</span></td><td class="admin-only"><button class="btn-delete" style="padding:3px 8px;font-size:11px" onclick="deletePayment(\''+esc(p.id)+'\')">Delete</button></td></tr>';
+      return '<tr><td class="nm">'+esc(st && st.name || '-')+'</td><td>'+esc(p.period || '')+'</td><td><span class="pill p-blue">'+esc(plans[Number(st && st.plan || 1)] || '1x/wk')+'</span></td><td class="mono">'+Number(p.amount || 0).toLocaleString()+'</td><td>'+esc(p.method || '')+'</td><td class="mono">'+esc(p.date || '')+'</td><td><span class="pill '+(p.status === 'paid' ? 'p-green' : 'p-red')+'">'+esc(p.status || '')+'</span></td><td class="admin-only">'+iconButton('trash','Delete payment','onclick="deletePayment(\''+esc(p.id)+'\')"')+'</td></tr>';
     }).join('') : '<tr><td colspan="8" style="text-align:center;color:var(--dim);padding:16px">No payments recorded yet</td></tr>';
     try{ renderMomoPending(); }catch(e){}
+    try{ applyUIRestrictions(currentRole); }catch(e){}
+  };
+
+  window.renderMarketplace = function(){
+    var grid = document.getElementById('market-grid');
+    if(!grid) return;
+    var products = APP.products || [];
+    var orders = (APP.orders || []).slice().reverse().slice(0,8);
+    grid.innerHTML = products.map(function(p){
+      var actions = '<button class="sh-btn primary buy-action" data-product-buy="'+esc(p.id)+'">Request / Buy</button>'+
+        iconButton('edit','Edit product','data-product-edit="'+esc(p.id)+'"','admin-only')+
+        iconButton('trash','Delete product','data-product-delete="'+esc(p.id)+'"','admin-only');
+      return '<div class="market-card"><div class="avatar-xl" style="width:100%;height:110px;border-radius:14px;margin-bottom:10px">'+esc((p.category || 'K')[0])+'</div><div style="font-weight:800;color:var(--fg)">'+esc(p.name)+'</div><div style="font-size:11px;color:var(--muted);margin:3px 0">'+esc(p.category || 'Gear')+' - Stock '+Number(p.stock || 0)+'</div><div style="font-family:Rajdhani;font-size:22px;font-weight:800;color:var(--gold)">RWF '+Number(p.price || 0).toLocaleString()+'</div><div style="font-size:12px;color:var(--muted);margin:6px 0 10px">'+esc(p.desc || '')+'</div><div class="audit-action-row">'+actions+'</div></div>';
+    }).join('') + '<div class="market-card admin-only"><div class="smart-form-title">Recent Orders</div><div class="audit-list">'+(orders.length ? orders.map(function(o){ var st = (APP.students || []).find(function(s){ return s.id === o.studentId; }); return '<div class="audit-list-item"><strong>'+esc(o.item)+'</strong><br>'+esc(st && st.name || 'Unknown student')+' - RWF '+Number(o.amount || 0).toLocaleString()+' - '+esc(o.status || 'requested')+'</div>'; }).join('') : '<div class="smart-note">No marketplace orders yet.</div>')+'</div></div>';
+    try{ applyUIRestrictions(currentRole); }catch(e){}
+  };
+
+  window.renderEvents = function(){
+    var grid = document.getElementById('event-grid');
+    if(!grid) return;
+    grid.innerHTML = (APP.events || []).map(function(e){
+      var actions = '<button class="sh-btn primary event-register-action" data-event-register="'+esc(e.id)+'">Register student</button>'+
+        iconButton('edit','Edit event','data-event-edit="'+esc(e.id)+'"','admin-only')+
+        iconButton('trash','Delete event','data-event-delete="'+esc(e.id)+'"','admin-only');
+      return '<div class="event-card"><div style="font-weight:900;color:var(--fg);font-size:15px">'+esc(e.title)+'</div><div style="font-size:12px;color:var(--muted);margin:4px 0">'+esc(normalizeDateLocal(e.date) || '')+' '+esc(e.time || '')+' - '+esc(e.location || 'Dojo')+'</div><div style="font-size:12px;color:var(--muted);margin-bottom:8px">'+esc(e.desc || '')+'</div><div class="profile-line"><span>Fee</span><span>RWF '+Number(e.fee || 0).toLocaleString()+'</span></div><div class="profile-line"><span>Deadline</span><span>'+esc(normalizeDateLocal(e.deadline) || '-')+'</span></div><div class="profile-line"><span>Registered</span><span>'+asArrayLocal(e.students).length+'</span></div><div class="audit-action-row">'+actions+'</div></div>';
+    }).join('');
     try{ applyUIRestrictions(currentRole); }catch(e){}
   };
 
@@ -4403,7 +4473,7 @@ setTimeout(requestNotificationPermission, 10000);
     var customNames = new Set(customBelts().map(function(item){ return item.name; }));
     list.innerHTML = BELT_OPTS.map(function(name){
       var custom = customNames.has(name);
-      return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)"><span class="belt '+(BC[name] || 'b-white')+'"><span class="belt-sw"></span>'+esc(name)+'</span><span>'+(custom ? '<button class="btn-delete" style="padding:3px 8px;font-size:11px" onclick="deleteBeltOption(\''+esc(name)+'\')">Delete</button>' : '<span style="font-size:11px;color:var(--dim)">Default</span>')+'</span></div>';
+      return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)"><span class="belt '+(BC[name] || 'b-white')+'"><span class="belt-sw"></span>'+esc(name)+'</span><span>'+(custom ? iconButton('trash','Delete belt','onclick="deleteBeltOption(\''+esc(name)+'\')"') : '<span style="font-size:11px;color:var(--dim)">Default</span>')+'</span></div>';
     }).join('');
   };
 
