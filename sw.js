@@ -4,7 +4,7 @@
 // Version: bump CACHE_VERSION to force update on all devices
 // ═══════════════════════════════════════════════════════════════
 
-const CACHE_VERSION  = 'han-tkd-v13-attendance-session-view';
+const CACHE_VERSION  = 'han-tkd-v14-stripe-belts';
 const STATIC_CACHE   = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE  = `${CACHE_VERSION}-dynamic`;
 

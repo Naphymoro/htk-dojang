@@ -184,14 +184,25 @@ td.nm{color:var(--fg);font-weight:600}
 .b-white{background:rgba(0,0,0,.06);color:var(--muted);border:1px solid var(--border2)}
 [data-theme="dark"] .b-white{background:rgba(255,255,255,.07);color:#C8D0E0}
 .b-white .belt-sw{background:#9CA3AF}
+.b-yellow-stripe{background:rgba(255,184,0,.08);color:var(--gold);border:1px solid rgba(255,184,0,.18)}
+.b-yellow-stripe .belt-sw{background:linear-gradient(90deg,#E9EDF5 0 42%,var(--gold) 42% 62%,#E9EDF5 62% 100%);border:1px solid rgba(255,184,0,.45)}
 .b-yellow{background:rgba(255,184,0,.1);color:var(--gold);border:1px solid rgba(255,184,0,.2)}
 .b-yellow .belt-sw{background:var(--gold)}
+.b-green-stripe{background:rgba(0,200,90,.08);color:#00B85A;border:1px solid rgba(0,200,90,.18)}
+.b-green-stripe .belt-sw{background:linear-gradient(90deg,var(--gold) 0 42%,#00B85A 42% 62%,var(--gold) 62% 100%);border:1px solid rgba(0,200,90,.35)}
 .b-green{background:rgba(0,200,90,.1);color:#00B85A;border:1px solid rgba(0,200,90,.2)}
 .b-green .belt-sw{background:#00B85A}
+.b-blue-stripe{background:rgba(70,160,255,.08);color:var(--blue);border:1px solid rgba(70,160,255,.18)}
+.b-blue-stripe .belt-sw{background:linear-gradient(90deg,#00B85A 0 42%,var(--blue) 42% 62%,#00B85A 62% 100%);border:1px solid rgba(70,160,255,.35)}
 .b-blue{background:var(--bblue);color:var(--blue);border:1px solid rgba(70,160,255,.2)}
 .b-blue .belt-sw{background:var(--blue)}
+.b-red-stripe{background:rgba(255,30,60,.08);color:var(--crimson);border:1px solid rgba(255,30,60,.18)}
+.b-red-stripe .belt-sw{background:linear-gradient(90deg,var(--blue) 0 42%,var(--crimson) 42% 62%,var(--blue) 62% 100%);border:1px solid rgba(255,30,60,.35)}
 .b-red{background:var(--cg);color:var(--crimson);border:1px solid rgba(255,30,60,.2)}
 .b-red .belt-sw{background:var(--crimson)}
+.b-black-stripe{background:rgba(0,0,0,.08);color:var(--muted);border:1px solid var(--border2)}
+[data-theme="dark"] .b-black-stripe{background:rgba(255,255,255,.05);color:#A0A8BC}
+.b-black-stripe .belt-sw{background:linear-gradient(90deg,var(--crimson) 0 42%,#111827 42% 62%,var(--crimson) 62% 100%);border:1px solid rgba(255,30,60,.35)}
 .b-black{background:rgba(0,0,0,.08);color:var(--muted);border:1px solid var(--border2)}
 [data-theme="dark"] .b-black{background:rgba(255,255,255,.05);color:#A0A8BC}
 .b-black .belt-sw{background:var(--fg)}
@@ -1247,8 +1258,8 @@ const LOGO_URI = (function(){
 // ════════════════════════════════════════════
 const DAYS=['Monday','Tuesday','Thursday','Friday','Saturday'];
 const TM={kid:{label:'Kid Lesson',cls:'slot-kid',badge:'p-gold'},ld:{label:'Little Dragon',cls:'slot-ld',badge:'p-purple'},ta:{label:'Teen & Adults',cls:'slot-ta',badge:'p-blue'},spar:{label:'Sparring ★',cls:'slot-spar',badge:'p-red'},women:{label:"Women's",cls:'slot-women',badge:'p-teal'}};
-const BC={'White':'b-white','Yellow':'b-yellow','Green':'b-green','Blue':'b-blue','Red':'b-red','Black 1st Dan':'b-black','Black 2nd Dan':'b-black','Black 3rd Dan':'b-black','Black 4th Dan':'b-black'};
-const BELT_OPTS=['White','Yellow','Green','Blue','Red','Black 1st Dan','Black 2nd Dan'];
+const BC={'White':'b-white','Yellow Stripe':'b-yellow-stripe','Yellow':'b-yellow','Green Stripe':'b-green-stripe','Green':'b-green','Blue Stripe':'b-blue-stripe','Blue':'b-blue','Red Stripe':'b-red-stripe','Red':'b-red','Black Stripe':'b-black-stripe','Black 1st Dan':'b-black','Black 2nd Dan':'b-black','Black 3rd Dan':'b-black','Black 4th Dan':'b-black'};
+const BELT_OPTS=['White','Yellow Stripe','Yellow','Green Stripe','Green','Blue Stripe','Blue','Red Stripe','Red','Black Stripe','Black 1st Dan','Black 2nd Dan','Black 3rd Dan','Black 4th Dan'];
 const METHODS=['MTN MoMo','Cash','Bank Transfer','Airtel Money'];
 const PM={dashboard:['DASHBOARD','Academy Overview'],schedule:['SCHEDULE','Weekly Timetable'],attendance:['ATTENDANCE','Check-In Engine'],students:['STUDENTS','Roster'],instructors:['INSTRUCTORS','Staff Management'],payments:['PAYMENTS','Fee Ledger'],parent:['PARENT PORTAL','Mobile View'],settings:['SETTINGS','Configuration'],market:['MARKETPLACE','Dojo Store'],events:['EVENTS','Announcements']};
 
@@ -4145,6 +4156,11 @@ setTimeout(requestNotificationPermission, 10000);
   function beltClassFor(name, cls){
     if(cls) return cls;
     var n = String(name || '').toLowerCase();
+    if(n.indexOf('stripe') >= 0 && n.indexOf('yellow') >= 0) return 'b-yellow-stripe';
+    if(n.indexOf('stripe') >= 0 && n.indexOf('green') >= 0) return 'b-green-stripe';
+    if(n.indexOf('stripe') >= 0 && n.indexOf('blue') >= 0) return 'b-blue-stripe';
+    if(n.indexOf('stripe') >= 0 && n.indexOf('red') >= 0) return 'b-red-stripe';
+    if(n.indexOf('stripe') >= 0 && (n.indexOf('black') >= 0 || n.indexOf('dan') >= 0)) return 'b-black-stripe';
     if(n.indexOf('yellow') >= 0) return 'b-yellow';
     if(n.indexOf('green') >= 0) return 'b-green';
     if(n.indexOf('blue') >= 0) return 'b-blue';
@@ -4459,7 +4475,7 @@ setTimeout(requestNotificationPermission, 10000);
       card = document.createElement('div');
       card.className = 'card admin-only';
       card.id = 'belt-management-card';
-      card.innerHTML = '<div class="card-head"><span class="card-title">Belt Management</span></div><div class="card-body"><div class="smart-note">Admins and Managers can add custom belt ranks for students and instructors.</div><div id="belt-management-list" style="display:flex;flex-direction:column;gap:7px;margin:10px 0 12px"></div><div class="form-2"><div class="form-row"><label class="form-label">New Belt Name</label><input class="form-input" id="new-belt-name" placeholder="e.g. Black 5th Dan"></div><div class="form-row"><label class="form-label">Color Group</label><select class="form-input" id="new-belt-class"><option value="b-white">White / default</option><option value="b-yellow">Yellow</option><option value="b-green">Green</option><option value="b-blue">Blue</option><option value="b-red">Red</option><option value="b-black">Black / Dan</option></select></div></div><button class="save-btn" onclick="addBeltOption()">Add belt</button></div>';
+      card.innerHTML = '<div class="card-head"><span class="card-title">Belt Management</span></div><div class="card-body"><div class="smart-note">Admins and Managers can add custom belt ranks for students and instructors.</div><div id="belt-management-list" style="display:flex;flex-direction:column;gap:7px;margin:10px 0 12px"></div><div class="form-2"><div class="form-row"><label class="form-label">New Belt Name</label><input class="form-input" id="new-belt-name" placeholder="e.g. Black 5th Dan"></div><div class="form-row"><label class="form-label">Color Group</label><select class="form-input" id="new-belt-class"><option value="b-white">White / default</option><option value="b-yellow-stripe">Yellow stripe</option><option value="b-yellow">Yellow</option><option value="b-green-stripe">Green stripe</option><option value="b-green">Green</option><option value="b-blue-stripe">Blue stripe</option><option value="b-blue">Blue</option><option value="b-red-stripe">Red stripe</option><option value="b-red">Red</option><option value="b-black-stripe">Black stripe</option><option value="b-black">Black / Dan</option></select></div></div><button class="save-btn" onclick="addBeltOption()">Add belt</button></div>';
       layout.appendChild(card);
     }
     card.style.display = isManageRole() ? '' : 'none';
