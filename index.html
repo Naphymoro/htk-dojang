@@ -4096,5 +4096,360 @@ setTimeout(requestNotificationPermission, 10000);
   }, 80);
 })();
 </script>
+<script id="admin-manager-management-controls-patch">
+(function(){
+  var CUSTOM_BELTS_KEY = 'ht_custom_belts';
+
+  function isManageRole(){
+    return currentRole === 'admin' || currentRole === 'manager';
+  }
+  function notifyManage(msg, type){
+    if(typeof showToast === 'function') showToast(msg, type || 'ok');
+  }
+  function requireManage(){
+    if(isManageRole()) return true;
+    notifyManage('Admin or Manager access required', 'err');
+    return false;
+  }
+  function esc(value){
+    return String(value == null ? '' : value).replace(/[&<>"']/g, function(ch){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];
+    });
+  }
+  function beltClassFor(name, cls){
+    if(cls) return cls;
+    var n = String(name || '').toLowerCase();
+    if(n.indexOf('yellow') >= 0) return 'b-yellow';
+    if(n.indexOf('green') >= 0) return 'b-green';
+    if(n.indexOf('blue') >= 0) return 'b-blue';
+    if(n.indexOf('red') >= 0) return 'b-red';
+    if(n.indexOf('black') >= 0 || n.indexOf('dan') >= 0) return 'b-black';
+    return 'b-white';
+  }
+  function customBelts(){
+    return (ld(CUSTOM_BELTS_KEY, []) || []).map(function(item){
+      return typeof item === 'string' ? {name:item, cls:beltClassFor(item)} : item;
+    }).filter(function(item){ return item && item.name; });
+  }
+  function saveCustomBelts(items){
+    sv(CUSTOM_BELTS_KEY, items.map(function(item){ return {name:item.name, cls:beltClassFor(item.name, item.cls)}; }));
+  }
+  function installBelt(name, cls){
+    if(!name) return;
+    if(BELT_OPTS.indexOf(name) === -1) BELT_OPTS.push(name);
+    BC[name] = beltClassFor(name, cls || BC[name]);
+  }
+  function installCustomBelts(){
+    customBelts().forEach(function(item){ installBelt(item.name, item.cls); });
+  }
+  function beltOptionsHtml(selected){
+    installCustomBelts();
+    return BELT_OPTS.map(function(name){
+      return '<option value="'+esc(name)+'"'+(name === selected ? ' selected' : '')+'>'+esc(name)+'</option>';
+    }).join('');
+  }
+  function refreshBeltSelects(){
+    var sf = document.getElementById('sf-belt');
+    if(sf){
+      var val = sf.value || 'White';
+      sf.innerHTML = beltOptionsHtml(val);
+      sf.value = BELT_OPTS.indexOf(val) >= 0 ? val : 'White';
+    }
+    var ib = document.getElementById('i-belt');
+    if(ib){
+      var iv = ib.value || 'Black 1st Dan';
+      ib.innerHTML = beltOptionsHtml(iv);
+      ib.value = BELT_OPTS.indexOf(iv) >= 0 ? iv : 'Black 1st Dan';
+    }
+  }
+  function refreshManagementViews(){
+    try{ renderStudents(); }catch(e){}
+    try{ renderInstructors(); }catch(e){}
+    try{ renderSchedule(); }catch(e){}
+    try{ renderPayments(); }catch(e){}
+    try{ renderPortalList(); }catch(e){}
+    try{ renderPortal(); }catch(e){}
+    try{ renderDashboard(); }catch(e){}
+    try{ applyUIRestrictions(currentRole); }catch(e){}
+  }
+
+  installCustomBelts();
+
+  var previousApplyUIRestrictions = window.applyUIRestrictions || (typeof applyUIRestrictions === 'function' ? applyUIRestrictions : null);
+  window.applyUIRestrictions = function(role){
+    if(previousApplyUIRestrictions) previousApplyUIRestrictions(role);
+    var manage = role === 'admin' || role === 'manager';
+    document.querySelectorAll('.nav-btn[data-view="settings"],.mob-btn[data-view="settings"]').forEach(function(btn){
+      btn.style.display = manage ? '' : 'none';
+    });
+    document.querySelectorAll('.admin-only').forEach(function(el){
+      el.style.display = manage ? '' : 'none';
+    });
+    renderBeltManager();
+  };
+
+  var previousSwitchView = window.switchView || (typeof switchView === 'function' ? switchView : null);
+  window.switchView = function(view){
+    var result = previousSwitchView ? previousSwitchView(view) : undefined;
+    if(view === 'settings') renderBeltManager();
+    try{ applyUIRestrictions(currentRole); }catch(e){}
+    return result;
+  };
+
+  var previousOpenStudentForm = window.openStudentForm || (typeof openStudentForm === 'function' ? openStudentForm : null);
+  if(previousOpenStudentForm){
+    window.openStudentForm = function(st){
+      installCustomBelts();
+      previousOpenStudentForm(st || null);
+      refreshBeltSelects();
+    };
+    window.openAddStudent = function(){ if(requireManage()) window.openStudentForm(null); };
+    window.editStudent = function(id){ if(!requireManage()) return; var st = (APP.students || []).find(function(s){ return s.id === id; }); if(st) window.openStudentForm(st); };
+    window.openEditStudent = window.editStudent;
+    window.assignStudentSessions = window.editStudent;
+  }
+
+  var previousOpenAddInstructor = window.openAddInstructor || (typeof openAddInstructor === 'function' ? openAddInstructor : null);
+  if(previousOpenAddInstructor){
+    window.openAddInstructor = function(){
+      if(!requireManage()) return;
+      installCustomBelts();
+      previousOpenAddInstructor();
+      refreshBeltSelects();
+    };
+  }
+  var previousOpenEditInstr = window.openEditInstr || (typeof openEditInstr === 'function' ? openEditInstr : null);
+  if(previousOpenEditInstr){
+    window.openEditInstr = function(id){
+      if(!requireManage()) return;
+      installCustomBelts();
+      previousOpenEditInstr(id);
+      refreshBeltSelects();
+      var del = document.getElementById('btn-del-instr');
+      if(del) del.style.display = isManageRole() ? 'inline-flex' : 'none';
+    };
+  }
+
+  window.deleteStudent = function(id){
+    if(!requireManage()) return;
+    var students = APP.students || [];
+    var st = students.find(function(s){ return s.id === id; });
+    if(!st) return;
+    if(!confirm('Delete student "' + st.name + '" and remove their linked attendance/session records?')) return;
+    APP.students = students.filter(function(s){ return s.id !== id; });
+    APP.sessions = (APP.sessions || []).map(function(sess){
+      var out = Object.assign({}, sess);
+      out.students = (out.students || []).filter(function(token){
+        return String(token) !== String(st.id) && String(token) !== String(st.name);
+      });
+      return out;
+    });
+    APP.parents = (APP.parents || []).map(function(parent){
+      var out = Object.assign({}, parent);
+      out.children = (out.children || []).filter(function(childId){ return childId !== id; });
+      return out;
+    }).filter(function(parent){ return (parent.children || []).length || parent.id !== st.parentId; });
+    APP.attendance = (APP.attendance || []).filter(function(a){ return a.studentId !== id; });
+    APP.absences = (APP.absences || []).filter(function(a){ return a.studentId !== id; });
+    APP.payments = (APP.payments || []).filter(function(p){ return p.studentId !== id; });
+    APP.orders = (APP.orders || []).filter(function(o){ return o.studentId !== id; });
+    if(APP.getPendingPayments && APP.setPendingPayments){
+      APP.setPendingPayments(APP.getPendingPayments().filter(function(p){ return p.studentId !== id; }));
+    }
+    refreshManagementViews();
+    notifyManage('Student deleted', 'gold');
+  };
+
+  window.deleteInstructor = function(id){
+    if(!requireManage()) return;
+    var targetId = id || editIID;
+    var instr = (APP.instructors || []).find(function(i){ return i.id === targetId; });
+    if(!instr) return;
+    if(!confirm('Delete instructor "' + instr.name + '"?')) return;
+    APP.instructors = (APP.instructors || []).filter(function(i){ return i.id !== targetId; });
+    APP.instrAtt = (APP.instrAtt || []).filter(function(a){ return a.iid !== targetId; });
+    APP.sessions = (APP.sessions || []).map(function(sess){
+      var out = Object.assign({}, sess);
+      out.instructors = (out.instructors || []).filter(function(name){ return name !== instr.name && name !== targetId; });
+      return out;
+    });
+    try{ closeModal('instrModal'); }catch(e){}
+    editIID = null;
+    refreshManagementViews();
+    notifyManage('Instructor deleted', 'gold');
+  };
+
+  var previousDeleteSession = window.deleteSession || (typeof deleteSession === 'function' ? deleteSession : null);
+  window.deleteSession = function(id){
+    if(!requireManage()) return;
+    var targetId = id || editSID;
+    var sess = (APP.sessions || []).find(function(s){ return s.id === targetId; });
+    if(!sess) return;
+    if(!confirm('Delete this session from the schedule?')) return;
+    APP.sessions = (APP.sessions || []).filter(function(s){ return s.id !== targetId; });
+    APP.students = (APP.students || []).map(function(st){
+      var out = Object.assign({}, st);
+      out.sessions = (out.sessions || []).filter(function(sid){ return sid !== targetId; });
+      out.sessionIds = (out.sessionIds || []).filter(function(sid){ return sid !== targetId; });
+      return out;
+    });
+    try{ closeModal('sessionModal'); }catch(e){}
+    editSID = null;
+    refreshManagementViews();
+    notifyManage('Session deleted', 'gold');
+  };
+
+  window.deletePayment = function(id){
+    if(!requireManage()) return;
+    var p = (APP.payments || []).find(function(item){ return item.id === id; });
+    if(!p) return;
+    if(!confirm('Delete this payment record?')) return;
+    APP.payments = (APP.payments || []).filter(function(item){ return item.id !== id; });
+    refreshManagementViews();
+    notifyManage('Payment deleted', 'gold');
+  };
+
+  window.renderStudents = function(){
+    installCustomBelts();
+    var body = document.getElementById('students-body');
+    if(!body) return;
+    var students = currentRole === 'instructor' ? getInstructorStudents() : APP.students;
+    var manage = isManageRole();
+    body.innerHTML = (students || []).map(function(st){
+      var cnt = (APP.attendance || []).filter(function(a){ return a.studentId === st.id && String(a.date || '').startsWith(mths()); }).length;
+      var req = (st.plan || 1) * 4;
+      var pct = req ? Math.round(cnt / req * 100) : 0;
+      var ps = typeof paymentState === 'function' ? paymentState(st) : {status:'active'};
+      var monthly = window.monthlyFeeForPlan ? window.monthlyFeeForPlan(st.plan) : ((Number(APP.lessonFee || 0) || 0) * (st.plan || 1));
+      var sessions = typeof childSessionLine === 'function' ? childSessionLine(st) : '';
+      var actions = manage
+        ? '<button class="sh-btn" onclick="openEditStudent(\''+esc(st.id)+'\')">Edit</button> <button class="sh-btn primary" onclick="assignStudentSessions(\''+esc(st.id)+'\')">Assign Session</button> <button class="sh-btn" onclick="switchView(\'parent\');document.getElementById(\'portal-sel\').value=\''+esc(st.id)+'\';renderPortal()">Profile</button> <button class="btn-delete" style="padding:4px 10px;font-size:11px" onclick="deleteStudent(\''+esc(st.id)+'\')">Delete</button>'
+        : '<button class="sh-btn" onclick="switchView(\'parent\');document.getElementById(\'portal-sel\').value=\''+esc(st.id)+'\';renderPortal()">Profile</button>';
+      return '<tr><td class="nm">'+esc(st.name)+'</td><td>'+esc(st.age)+' yrs<br><span style="font-size:10.5px;color:var(--muted)">'+sessions+'</span></td><td><span class="belt '+(BC[st.belt] || 'b-white')+'"><span class="belt-sw"></span>'+esc(st.belt)+'</span></td><td>'+esc(st.plan)+'/week</td><td>'+sessions+'</td><td class="mono" title="'+(window.formatRwf ? window.formatRwf(monthly) : monthly)+'">'+(window.formatRwfCompact ? window.formatRwfCompact(monthly) : Number(monthly || 0).toLocaleString())+'</td><td>'+cnt+'/'+req+' - '+pct+'%</td><td><span class="pill '+(ps.status === 'paid' ? 'p-green' : ps.status === 'wallet-funded' ? 'p-teal' : 'p-red')+'">'+esc(ps.status || 'active')+'</span></td><td><div style="display:flex;gap:5px;flex-wrap:wrap">'+actions+'</div></td></tr>';
+    }).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--dim);padding:14px">No students</td></tr>';
+    try{ applyUIRestrictions(currentRole); }catch(e){}
+  };
+
+  window.renderInstructors = function(){
+    installCustomBelts();
+    var instrs = APP.instructors || [];
+    var ia = APP.instrAtt || [];
+    var manage = isManageRole();
+    var count = document.getElementById('nb-instr');
+    if(count) count.textContent = instrs.length;
+    var grid = document.getElementById('instructor-grid');
+    if(grid){
+      grid.innerHTML = instrs.map(function(instr){
+        var mCnt = ia.filter(function(a){ return a.iid === instr.id && String(a.date || '').startsWith(mths()); }).length;
+        var tot = ia.filter(function(a){ return a.iid === instr.id; }).length;
+        var init = String(instr.name || '').split(' ').map(function(w){ return w[0] || ''; }).slice(0,2).join('');
+        var manageActions = manage ? '<button class="sh-btn" style="padding:4px 10px;font-size:11px;flex:1" onclick="openEditInstr(\''+esc(instr.id)+'\')">Edit</button><button class="btn-delete" style="padding:4px 10px;font-size:11px" onclick="deleteInstructor(\''+esc(instr.id)+'\')">Delete</button>' : '';
+        return '<div class="ic"><div class="ic-header"><div class="ic-av">'+esc(init)+'</div><div><div class="ic-name">'+esc(instr.name)+'</div><div class="ic-role">'+esc(instr.role)+'</div></div></div><div class="ic-stats"><div class="ic-stat"><div class="ic-stat-val">'+mCnt+'</div><div class="ic-stat-lbl">This month</div></div><div class="ic-stat"><div class="ic-stat-val">'+tot+'</div><div class="ic-stat-lbl">Total sessions</div></div></div><div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:9px"><span class="belt '+(BC[instr.belt] || 'b-black')+'"><span class="belt-sw"></span>'+esc(instr.belt)+'</span><span class="pill p-green">Active</span></div>'+((instr.sessions || []).length ? '<div class="ic-sess-list">'+(instr.sessions || []).slice(0,3).map(function(s){ return '<div class="ic-sess-tag">'+esc(s)+'</div>'; }).join('')+((instr.sessions || []).length > 3 ? '<div style="font-size:9.5px;color:var(--dim);padding:2px 0">+'+((instr.sessions || []).length - 3)+' more</div>' : '')+'</div>' : '')+'<div class="ic-actions">'+manageActions+'<button class="sh-btn primary" style="padding:4px 10px;font-size:11px" onclick="markInstrAtt(\''+esc(instr.id)+'\')">Present</button></div></div>';
+      }).join('') || '<div style="color:var(--muted);font-size:12.5px;padding:8px 0">No instructors added yet</div>';
+    }
+    var log = document.getElementById('instr-log-body');
+    if(log){
+      log.innerHTML = instrs.map(function(instr){
+        var ia2 = ia.filter(function(a){ return a.iid === instr.id; });
+        var mCnt = ia2.filter(function(a){ return String(a.date || '').startsWith(mths()); }).length;
+        var tot = ia2.length;
+        var last = ia2.length ? ia2.slice(-1)[0].date : 'Never';
+        var actions = manage ? '<button class="sh-btn" style="padding:3px 8px;font-size:11px" onclick="openEditInstr(\''+esc(instr.id)+'\')">Edit</button> <button class="btn-delete" style="padding:3px 8px;font-size:11px" onclick="deleteInstructor(\''+esc(instr.id)+'\')">Delete</button>' : '-';
+        return '<tr><td class="nm">'+esc(instr.name)+'</td><td><span class="belt '+(BC[instr.belt] || 'b-black')+'"><span class="belt-sw"></span>'+esc(instr.belt)+'</span></td><td><span class="pill p-teal">'+mCnt+' sessions</span></td><td class="mono">'+tot+'</td><td class="mono">'+esc(last)+'</td><td style="max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc((instr.sessions || []).slice(0,2).join(', ') || '-')+((instr.sessions || []).length > 2 ? ' +'+((instr.sessions || []).length - 2) : '')+'</td><td>'+actions+'</td></tr>';
+      }).join('');
+    }
+    refreshBeltSelects();
+    try{ applyUIRestrictions(currentRole); }catch(e){}
+  };
+
+  var previousRenderPayments = window.renderPayments || (typeof renderPayments === 'function' ? renderPayments : null);
+  window.renderPayments = function(){
+    if(previousRenderPayments) previousRenderPayments();
+    var table = document.getElementById('payments-body')?.closest('table');
+    var header = table?.querySelector('thead tr');
+    if(header && header.children.length < 8) header.insertAdjacentHTML('beforeend', '<th class="admin-only">Action</th>');
+    var body = document.getElementById('payments-body');
+    if(!body) return;
+    var payments = APP.payments || [];
+    var students = APP.students || [];
+    var plans = ['-','1x/wk','2x/wk','3x/wk'];
+    body.innerHTML = payments.length ? payments.slice().reverse().map(function(p){
+      var st = students.find(function(s){ return s.id === p.studentId; });
+      return '<tr><td class="nm">'+esc(st && st.name || '-')+'</td><td>'+esc(p.period || '')+'</td><td><span class="pill p-blue">'+esc(plans[Number(st && st.plan || 1)] || '1x/wk')+'</span></td><td class="mono">'+Number(p.amount || 0).toLocaleString()+'</td><td>'+esc(p.method || '')+'</td><td class="mono">'+esc(p.date || '')+'</td><td><span class="pill '+(p.status === 'paid' ? 'p-green' : 'p-red')+'">'+esc(p.status || '')+'</span></td><td class="admin-only"><button class="btn-delete" style="padding:3px 8px;font-size:11px" onclick="deletePayment(\''+esc(p.id)+'\')">Delete</button></td></tr>';
+    }).join('') : '<tr><td colspan="8" style="text-align:center;color:var(--dim);padding:16px">No payments recorded yet</td></tr>';
+    try{ renderMomoPending(); }catch(e){}
+    try{ applyUIRestrictions(currentRole); }catch(e){}
+  };
+
+  window.renderBeltManager = function(){
+    var layout = document.querySelector('#page-settings .settings-layout');
+    if(!layout) return;
+    var card = document.getElementById('belt-management-card');
+    if(!card){
+      card = document.createElement('div');
+      card.className = 'card admin-only';
+      card.id = 'belt-management-card';
+      card.innerHTML = '<div class="card-head"><span class="card-title">Belt Management</span></div><div class="card-body"><div class="smart-note">Admins and Managers can add custom belt ranks for students and instructors.</div><div id="belt-management-list" style="display:flex;flex-direction:column;gap:7px;margin:10px 0 12px"></div><div class="form-2"><div class="form-row"><label class="form-label">New Belt Name</label><input class="form-input" id="new-belt-name" placeholder="e.g. Black 5th Dan"></div><div class="form-row"><label class="form-label">Color Group</label><select class="form-input" id="new-belt-class"><option value="b-white">White / default</option><option value="b-yellow">Yellow</option><option value="b-green">Green</option><option value="b-blue">Blue</option><option value="b-red">Red</option><option value="b-black">Black / Dan</option></select></div></div><button class="save-btn" onclick="addBeltOption()">Add belt</button></div>';
+      layout.appendChild(card);
+    }
+    card.style.display = isManageRole() ? '' : 'none';
+    renderBeltList();
+  };
+
+  window.renderBeltList = function(){
+    installCustomBelts();
+    var list = document.getElementById('belt-management-list');
+    if(!list) return;
+    var customNames = new Set(customBelts().map(function(item){ return item.name; }));
+    list.innerHTML = BELT_OPTS.map(function(name){
+      var custom = customNames.has(name);
+      return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)"><span class="belt '+(BC[name] || 'b-white')+'"><span class="belt-sw"></span>'+esc(name)+'</span><span>'+(custom ? '<button class="btn-delete" style="padding:3px 8px;font-size:11px" onclick="deleteBeltOption(\''+esc(name)+'\')">Delete</button>' : '<span style="font-size:11px;color:var(--dim)">Default</span>')+'</span></div>';
+    }).join('');
+  };
+
+  window.addBeltOption = function(){
+    if(!requireManage()) return;
+    var input = document.getElementById('new-belt-name');
+    var select = document.getElementById('new-belt-class');
+    var name = (input && input.value || '').trim();
+    var cls = select && select.value || beltClassFor(name);
+    if(!name){ notifyManage('Enter a belt name', 'err'); return; }
+    if(BELT_OPTS.indexOf(name) >= 0){ notifyManage('That belt already exists', 'err'); return; }
+    var items = customBelts();
+    items.push({name:name, cls:cls});
+    saveCustomBelts(items);
+    installBelt(name, cls);
+    if(input) input.value = '';
+    refreshBeltSelects();
+    renderBeltManager();
+    refreshManagementViews();
+    notifyManage('Belt added');
+  };
+
+  window.deleteBeltOption = function(name){
+    if(!requireManage()) return;
+    var items = customBelts();
+    if(!items.some(function(item){ return item.name === name; })){ notifyManage('Default belts cannot be deleted', 'err'); return; }
+    var used = (APP.students || []).some(function(st){ return st.belt === name; }) || (APP.instructors || []).some(function(instr){ return instr.belt === name; });
+    if(used){ notifyManage('This belt is assigned. Change those records first.', 'err'); return; }
+    if(!confirm('Delete belt "' + name + '"?')) return;
+    saveCustomBelts(items.filter(function(item){ return item.name !== name; }));
+    var idx = BELT_OPTS.indexOf(name);
+    if(idx >= 0) BELT_OPTS.splice(idx, 1);
+    delete BC[name];
+    refreshBeltSelects();
+    renderBeltManager();
+    refreshManagementViews();
+    notifyManage('Belt deleted', 'gold');
+  };
+
+  setTimeout(function(){
+    installCustomBelts();
+    renderBeltManager();
+    refreshBeltSelects();
+    refreshManagementViews();
+  }, 120);
+})();
+</script>
 </body>
 </html>

@@ -4,7 +4,7 @@
 // Version: bump CACHE_VERSION to force update on all devices
 // ═══════════════════════════════════════════════════════════════
 
-const CACHE_VERSION  = 'han-tkd-v9-subscription-momo-pin';
+const CACHE_VERSION  = 'han-tkd-v10-management-controls';
 const STATIC_CACHE   = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE  = `${CACHE_VERSION}-dynamic`;
 
